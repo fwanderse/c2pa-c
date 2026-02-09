@@ -10,21 +10,47 @@
 // specific language governing permissions and limitations under
 // each license.
 
-/// @file   api_coverage.test.cpp
-/// @brief  Tests for Context, Settings, Archive, and MIME type APIs.
-/// @details Fills coverage gaps in the Context/Settings API, archive round-trip,
-///          and MIME type support. See plans/04-context-settings-archive-mime.md
-
 #include <gtest/gtest.h>
 #include <algorithm>
 #include <fstream>
 #include <sstream>
 #include <string>
+#include <nlohmann/json.hpp>
 
 #include "c2pa.hpp"
 #include "test_utils.hpp"
 
 namespace fs = std::filesystem;
+
+// Test fixture for context tests with automatic cleanup
+class ContextTest : public ::testing::Test {
+protected:
+    std::vector<fs::path> temp_files;
+    bool cleanup_temp_files = true;  // Set to false to keep temp files for debugging
+
+    // Get path for temp context test files in build directory
+    fs::path get_temp_path(const std::string& name) {
+        fs::path current_dir = fs::path(__FILE__).parent_path();
+        fs::path build_dir = current_dir.parent_path() / "build";
+        if (!fs::exists(build_dir)) {
+            fs::create_directories(build_dir);
+        }
+        fs::path temp_path = build_dir / ("context-" + name);
+        temp_files.push_back(temp_path);
+        return temp_path;
+    }
+
+    void TearDown() override {
+        if (cleanup_temp_files) {
+            for (const auto& path : temp_files) {
+                if (fs::exists(path)) {
+                    fs::remove(path);
+                }
+            }
+        }
+        temp_files.clear();
+    }
+};
 
 static fs::path fixture_path(const std::string &name)
 {
@@ -37,7 +63,7 @@ static std::string load_fixture(const std::string &name)
 }
 
 // Can create a context
-TEST(ContextAPI, ContextCreateReturnsValid)
+TEST(Context, ContextCreateReturnsValid)
 {
     auto context = c2pa::Context::create();
     ASSERT_NE(context, nullptr);
@@ -45,7 +71,7 @@ TEST(ContextAPI, ContextCreateReturnsValid)
 }
 
 // Can create a context using JSON settings
-TEST(ContextAPI, ContextFromJsonValid)
+TEST(Context, ContextFromJsonValid)
 {
     std::string json = R"({"settings": {}})";
     auto context = c2pa::Context::from_json(json);
@@ -54,7 +80,7 @@ TEST(ContextAPI, ContextFromJsonValid)
 }
 
 // Context::from_json() with invalid JSON throws
-TEST(ContextAPI, ContextFromJsonInvalidThrows)
+TEST(Context, ContextFromJsonInvalidThrows)
 {
     EXPECT_THROW(
         { auto context = c2pa::Context::from_json("{bad"); },
@@ -63,7 +89,7 @@ TEST(ContextAPI, ContextFromJsonInvalidThrows)
 }
 
 // Context::from_toml() with valid TOML returns valid context
-TEST(ContextAPI, ContextFromTomlValid)
+TEST(Context, ContextFromTomlValid)
 {
     std::string toml = "[settings]\n";
     auto context = c2pa::Context::from_toml(toml);
@@ -72,7 +98,7 @@ TEST(ContextAPI, ContextFromTomlValid)
 }
 
 // Context::from_toml() with invalid TOML throws
-TEST(ContextAPI, ContextFromTomlInvalidThrows)
+TEST(Context, ContextFromTomlInvalidThrows)
 {
     EXPECT_THROW(
         { auto context = c2pa::Context::from_toml("bad toml [[[]"); },
@@ -81,7 +107,7 @@ TEST(ContextAPI, ContextFromTomlInvalidThrows)
 }
 
 // Default context can be used with a Builder
-TEST(SettingsAPI, SettingsDefaultConstruction)
+TEST(Context, SettingsDefaultConstruction)
 {
     c2pa::Settings settings;
     auto manifest = load_fixture("training.json");
@@ -94,7 +120,7 @@ TEST(SettingsAPI, SettingsDefaultConstruction)
 }
 
 // Can update settings with any valid JSON
-TEST(SettingsAPI, SettingsUpdateJson)
+TEST(Context, SettingsUpdateJson)
 {
     c2pa::Settings settings;
     EXPECT_NO_THROW({
@@ -103,11 +129,262 @@ TEST(SettingsAPI, SettingsUpdateJson)
 }
 
 // ContextBuilder empty build returns default/empty context
-TEST(ContextBuilderAPI, ContextBuilderEmptyBuild)
+TEST(Context, ContextBuilderEmptyBuild)
 {
     auto builder = c2pa::Context::ContextBuilder();
     auto context = builder.create_context();
 
     ASSERT_NE(context, nullptr);
     EXPECT_TRUE(context->has_context());
+}
+
+// Helper function to check if thumbnail is present in signed manifest
+static bool has_thumbnail(const std::string& manifest_json) {
+    auto parsed = nlohmann::json::parse(manifest_json);
+    std::string active = parsed["active_manifest"];
+    return parsed["manifests"][active].contains("thumbnail");
+}
+
+// Helper function to sign with context and return manifest JSON
+static std::string sign_with_context(std::shared_ptr<c2pa::IContextProvider> context, const fs::path& dest_path) {
+    fs::path current_dir = fs::path(__FILE__).parent_path();
+    fs::path manifest_path = current_dir / "fixtures/training.json";
+    fs::path asset_path = current_dir / "fixtures/A.jpg";
+    fs::path cert_path = current_dir / "fixtures/es256_certs.pem";
+    fs::path key_path = current_dir / "fixtures/es256_private.key";
+
+    auto manifest = c2pa_test::read_text_file(manifest_path);
+    auto certs = c2pa_test::read_text_file(cert_path);
+    auto private_key = c2pa_test::read_text_file(key_path);
+
+    c2pa::Builder builder(context, manifest);
+    c2pa::Signer signer("es256", certs, private_key);
+
+    builder.sign(asset_path, dest_path, signer);
+
+    c2pa::Reader reader(context, dest_path);
+    auto result = reader.json();
+
+    return result;
+}
+
+TEST_F(ContextTest, SetOverridesLastWins) {
+    c2pa::Settings settings;
+    settings.set("builder.thumbnail.enabled", "true");
+    settings.set("builder.thumbnail.enabled", "false");
+
+    auto context = c2pa::Context::ContextBuilder().with_settings(settings).create_context();
+    auto manifest_json = sign_with_context(context, get_temp_path("set_overrides_last_wins.jpg"));
+
+    EXPECT_FALSE(has_thumbnail(manifest_json));
+}
+
+TEST_F(ContextTest, UpdateOverridesSetJson) {
+    fs::path current_dir = fs::path(__FILE__).parent_path();
+    fs::path settings_path = current_dir / "fixtures/settings/test_settings_no_thumbnail.json";
+    auto settings_json = c2pa_test::read_text_file(settings_path);
+
+    c2pa::Settings settings;
+    settings.set("builder.thumbnail.enabled", "true");
+    settings.update(settings_json, c2pa::ConfigFormat::JSON);
+
+    auto context = c2pa::Context::ContextBuilder().with_settings(settings).create_context();
+    auto manifest_json = sign_with_context(context, get_temp_path("update_overrides_set_json.jpg"));
+
+    EXPECT_FALSE(has_thumbnail(manifest_json));
+}
+
+TEST_F(ContextTest, SetOverridesUpdateJson) {
+    fs::path current_dir = fs::path(__FILE__).parent_path();
+    fs::path settings_path = current_dir / "fixtures/settings/test_settings_no_thumbnail.json";
+    auto settings_json = c2pa_test::read_text_file(settings_path);
+
+    c2pa::Settings settings;
+    settings.update(settings_json, "json");
+    settings.set("builder.thumbnail.enabled", "true");
+
+    auto context = c2pa::Context::ContextBuilder().with_settings(settings).create_context();
+    auto manifest_json = sign_with_context(context, get_temp_path("set_overrides_update_json.jpg"));
+
+    EXPECT_TRUE(has_thumbnail(manifest_json));
+}
+
+TEST_F(ContextTest, UpdateTomlThenUpdateJson) {
+    fs::path current_dir = fs::path(__FILE__).parent_path();
+    fs::path toml_path = current_dir / "fixtures/settings/test_settings_with_thumbnail.toml";
+    fs::path json_path = current_dir / "fixtures/settings/test_settings_no_thumbnail.json";
+
+    auto settings_toml = c2pa_test::read_text_file(toml_path);
+    auto settings_json = c2pa_test::read_text_file(json_path);
+
+    c2pa::Settings settings;
+    settings.update(settings_toml, c2pa::ConfigFormat::TOML);
+    settings.update(settings_json, c2pa::ConfigFormat::JSON);
+
+    auto context = c2pa::Context::ContextBuilder().with_settings(settings).create_context();
+    auto manifest_json = sign_with_context(context, get_temp_path("update_toml_then_json.jpg"));
+
+    EXPECT_FALSE(has_thumbnail(manifest_json));
+}
+
+TEST_F(ContextTest, UpdateJsonThenUpdateToml) {
+    fs::path current_dir = fs::path(__FILE__).parent_path();
+    fs::path json_path = current_dir / "fixtures/settings/test_settings_no_thumbnail.json";
+    fs::path toml_path = current_dir / "fixtures/settings/test_settings_with_thumbnail.toml";
+
+    auto settings_json = c2pa_test::read_text_file(json_path);
+    auto settings_toml = c2pa_test::read_text_file(toml_path);
+
+    c2pa::Settings settings;
+    settings.update(settings_json, "json");
+    settings.update(settings_toml, "toml");
+
+    auto context = c2pa::Context::ContextBuilder().with_settings(settings).create_context();
+    auto manifest_json = sign_with_context(context, get_temp_path("update_json_then_toml.jpg"));
+
+    EXPECT_TRUE(has_thumbnail(manifest_json));
+}
+
+TEST_F(ContextTest, WithJsonThenWithToml) {
+    fs::path current_dir = fs::path(__FILE__).parent_path();
+    fs::path json_path = current_dir / "fixtures/settings/test_settings_with_thumbnail.json";
+    fs::path toml_path = current_dir / "fixtures/settings/test_settings_no_thumbnail.toml";
+
+    auto settings_json = c2pa_test::read_text_file(json_path);
+    auto settings_toml = c2pa_test::read_text_file(toml_path);
+
+    auto context = c2pa::Context::ContextBuilder()
+        .with_json(settings_json)
+        .with_toml(settings_toml)
+        .create_context();
+
+    auto manifest_json = sign_with_context(context, get_temp_path("with_json_then_toml.jpg"));
+    EXPECT_FALSE(has_thumbnail(manifest_json));
+}
+
+TEST_F(ContextTest, WithTomlThenWithJson) {
+    fs::path current_dir = fs::path(__FILE__).parent_path();
+    fs::path toml_path = current_dir / "fixtures/settings/test_settings_no_thumbnail.toml";
+    fs::path json_path = current_dir / "fixtures/settings/test_settings_with_thumbnail.json";
+
+    auto settings_toml = c2pa_test::read_text_file(toml_path);
+    auto settings_json = c2pa_test::read_text_file(json_path);
+
+    auto context = c2pa::Context::ContextBuilder()
+        .with_toml(settings_toml)
+        .with_json(settings_json)
+        .create_context();
+
+    auto manifest_json = sign_with_context(context, get_temp_path("with_toml_then_json.jpg"));
+    EXPECT_TRUE(has_thumbnail(manifest_json));
+}
+
+TEST_F(ContextTest, WithSettingsThenWithJson) {
+    fs::path current_dir = fs::path(__FILE__).parent_path();
+    fs::path json_path = current_dir / "fixtures/settings/test_settings_no_thumbnail.json";
+    auto settings_json = c2pa_test::read_text_file(json_path);
+
+    c2pa::Settings settings;
+    settings.set("builder.thumbnail.enabled", "true");
+
+    auto context = c2pa::Context::ContextBuilder()
+        .with_settings(settings)
+        .with_json(settings_json)
+        .create_context();
+
+    auto manifest_json = sign_with_context(context, get_temp_path("with_settings_then_json.jpg"));
+    EXPECT_FALSE(has_thumbnail(manifest_json));
+}
+
+TEST_F(ContextTest, WithJsonThenWithSettings) {
+    fs::path current_dir = fs::path(__FILE__).parent_path();
+    fs::path json_path = current_dir / "fixtures/settings/test_settings_with_thumbnail.json";
+    auto settings_json = c2pa_test::read_text_file(json_path);
+
+    c2pa::Settings settings;
+    settings.set("builder.thumbnail.enabled", "false");
+
+    auto context = c2pa::Context::ContextBuilder()
+        .with_json(settings_json)
+        .with_settings(settings)
+        .create_context();
+
+    auto manifest_json = sign_with_context(context, get_temp_path("with_json_then_settings.jpg"));
+    EXPECT_FALSE(has_thumbnail(manifest_json));
+}
+
+TEST(Context, ContextBuilderMoveConstructor) {
+    auto b1 = c2pa::Context::ContextBuilder();
+    auto b2 = std::move(b1);
+
+    EXPECT_FALSE(b1.is_valid());
+    EXPECT_TRUE(b2.is_valid());
+
+    auto context = b2.create_context();
+    EXPECT_NE(context, nullptr);
+    EXPECT_TRUE(context->has_context());
+}
+
+TEST(Context, ContextBuilderMoveAssignment) {
+    auto b1 = c2pa::Context::ContextBuilder();
+    auto b2 = c2pa::Context::ContextBuilder();
+
+    b1 = std::move(b2);
+
+    EXPECT_FALSE(b2.is_valid());
+    EXPECT_TRUE(b1.is_valid());
+
+    auto context = b1.create_context();
+    EXPECT_NE(context, nullptr);
+    EXPECT_TRUE(context->has_context());
+}
+
+TEST(Context, SettingsMoveConstructor) {
+    c2pa::Settings s1;
+    s1.set("builder.thumbnail.enabled", "false");
+
+    auto s2 = std::move(s1);
+
+    EXPECT_EQ(s1.c_settings(), nullptr);
+
+    // Verify s2 is functional
+    auto context = c2pa::Context::ContextBuilder().with_settings(s2).create_context();
+    EXPECT_NE(context, nullptr);
+}
+
+TEST(Context, SettingsMoveAssignment) {
+    c2pa::Settings s1;
+    c2pa::Settings s2;
+    s2.set("builder.thumbnail.enabled", "true");
+
+    s1 = std::move(s2);
+
+    EXPECT_EQ(s2.c_settings(), nullptr);
+
+    // Verify s1 is functional and can call set()
+    EXPECT_NO_THROW(s1.set("builder.thumbnail.enabled", "false"));
+}
+
+TEST(Context, ContextBuilderUseAfterMoveThrows) {
+    auto b1 = c2pa::Context::ContextBuilder();
+    auto b2 = std::move(b1);
+
+    EXPECT_THROW(b1.with_json("{}"), c2pa::C2paException);
+}
+
+TEST(Context, UseAfterConsumeThrows) {
+    auto builder = c2pa::Context::ContextBuilder();
+    auto context = builder.create_context();
+
+    EXPECT_THROW(builder.with_json("{}"), c2pa::C2paException);
+}
+
+TEST(Context, DoubleConsumeThrows) {
+    auto builder = c2pa::Context::ContextBuilder();
+    auto context1 = builder.create_context();
+
+    EXPECT_THROW({
+        auto context2 = builder.create_context();
+        (void)context2; // Suppress unused variable warning
+    }, c2pa::C2paException);
 }

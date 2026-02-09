@@ -140,9 +140,14 @@ For example:
 
 The C++ library can validate [CAWG identity assertions](https://cawg.io/identity/).
 
-## On trust configuration
+## On trust configurations
 
-TBD
+C2PA maintains two [trust lists](https://opensource.contentauthenticity.org/docs/conformance/trust-lists/)
+to verify the authenticity and integrity of Content Credentials attached to digital media: the C2PA trust list and the C2PA time-stamping authority (TSA) trust list. The C2PA trust list is a list of X.509 certificate trust anchors (either root or subordinate certification authorities) that issue certificates to conforming generator products under the C2PA Certificate Policy. The C2PA time-stamping authority (TSA) trust list is a list of X.509 certificate trust anchors (either root or subordinate certification authorities) that issue time-stamp signing certificates to TSAs.
+
+These trust lists need to be configured (loaded as settings) when using the SDK, using the Settings in the Context APIs. Using the Context API ensure proper propagation of settings (and trust) to Builder and Reader objects.
+
+Trust has an impact on manifest validation status, as a manifest for which a trust chain could be verified will be flagged as `Trusted`.
 
 ## More examples
 

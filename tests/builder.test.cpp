@@ -13,6 +13,7 @@
 #include <c2pa.hpp>
 #include <gtest/gtest.h>
 #include <nlohmann/json.hpp>
+#include <iostream>
 #include <string>
 #include <filesystem>
 #include <thread>
@@ -23,7 +24,61 @@ using namespace std;
 namespace fs = std::filesystem;
 using nlohmann::json;
 
-TEST(Builder, supported_mime_types_returns_types) {
+// Test fixture for builder tests with cleanup
+class BuilderTest : public ::testing::Test {
+protected:
+    std::vector<fs::path> temp_files;
+    std::vector<fs::path> temp_dirs;
+    bool cleanup_temp_files = true;  // Set to false to keep temp files for debugging
+
+    // Get path for temp builder test files in build directory
+    fs::path get_temp_path(const std::string& name) {
+        fs::path current_dir = fs::path(__FILE__).parent_path();
+        fs::path build_dir = current_dir.parent_path() / "build";
+        if (!fs::exists(build_dir)) {
+            fs::create_directories(build_dir);
+        }
+        fs::path temp_path = build_dir / ("builder-" + name);
+        temp_files.push_back(temp_path);
+        return temp_path;
+    }
+
+    // Get path for temp builder test directories in build directory
+    fs::path get_temp_dir(const std::string& name) {
+        fs::path current_dir = fs::path(__FILE__).parent_path();
+        fs::path build_dir = current_dir.parent_path() / "build";
+        if (!fs::exists(build_dir)) {
+            fs::create_directories(build_dir);
+        }
+        fs::path temp_path = build_dir / ("builder-" + name);
+        // Remove and recreate the temp dir
+        if (fs::exists(temp_path)) {
+            fs::remove_all(temp_path);
+        }
+        fs::create_directories(temp_path);
+        temp_dirs.push_back(temp_path);
+        return temp_path;
+    }
+
+    void TearDown() override {
+        if (cleanup_temp_files) {
+            for (const auto& path : temp_files) {
+                if (fs::exists(path)) {
+                    fs::remove(path);
+                }
+            }
+            for (const auto& dir : temp_dirs) {
+                if (fs::exists(dir)) {
+                    fs::remove_all(dir);
+                }
+            }
+        }
+        temp_files.clear();
+        temp_dirs.clear();
+    }
+};
+
+TEST_F(BuilderTest, supported_mime_types_returns_types) {
   auto supported_types = c2pa::Builder::supported_mime_types();
   auto begin = supported_types.begin();
   auto end = supported_types.end();
@@ -31,12 +86,120 @@ TEST(Builder, supported_mime_types_returns_types) {
   EXPECT_TRUE(std::find(begin, end, "application/c2pa") != end);
 }
 
-TEST(Builder, exposes_raw_pointer) {
+TEST_F(BuilderTest, exposes_raw_pointer) {
     fs::path current_dir = fs::path(__FILE__).parent_path();
     fs::path manifest_path = current_dir / "../tests/fixtures/training.json";
     auto manifest = c2pa_test::read_text_file(manifest_path);
     c2pa::Builder builder(manifest);
     ASSERT_NE(builder.c2pa_builder(), nullptr);
+}
+
+// Test fixture for basic signature validations with automatic cleanup
+class BuilderSmokeSignTest : public BuilderTest, public ::testing::WithParamInterface<std::string> {
+public:
+  static std::string get_mime_type_from_extension(const std::string& filename) {
+    std::string ext = fs::path(filename).extension().string();
+    if (ext == ".jpg" || ext == ".jpeg") return "image/jpeg";
+    if (ext == ".png") return "image/png";
+    if (ext == ".gif") return "image/gif";
+    if (ext == ".webp") return "image/webp";
+    if (ext == ".svg") return "image/svg+xml";
+    if (ext == ".dng") return "image/dng";
+    if (ext == ".mp4") return "video/mp4";
+    if (ext == ".mp3") return "audio/mpeg";
+    if (ext == ".wav") return "audio/wav";
+    return "application/octet-stream";
+  }
+};
+
+INSTANTIATE_TEST_SUITE_P(
+    BuilderSignCallToVerifyMiscFileTypes,
+    BuilderSmokeSignTest,
+    ::testing::Values(
+        "A.jpg",
+        "C.jpg",
+        "C.dng",
+        "C_with_CAWG_data.jpg",
+        "sample1.gif",
+        "sample1.mp3",
+        "sample1.wav",
+        "sample1.webp",
+        "sample2.svg",
+        "video1.mp4"
+        )
+);
+
+TEST_P(BuilderSmokeSignTest, SignsFileTypes) {
+  fs::path current_dir = fs::path(__FILE__).parent_path();
+
+  // Construct the paths relative to the current directory
+  fs::path manifest_path = current_dir / "../tests/fixtures/training.json";
+  fs::path certs_path = current_dir / "../tests/fixtures/es256_certs.pem";
+  fs::path asset_path = current_dir / "../tests/fixtures" / GetParam();
+
+  // Use temp path with automatic cleanup
+  fs::path output_path = get_temp_path(GetParam());
+
+  auto manifest = c2pa_test::read_text_file(manifest_path);
+  auto certs = c2pa_test::read_text_file(certs_path);
+  auto p_key = c2pa_test::read_text_file(current_dir / "../tests/fixtures/es256_private.key");
+
+  // create a signer
+  auto signer = c2pa::Signer("Es256", certs, p_key, "http://timestamp.digicert.com");
+  auto builder = c2pa::Builder(manifest);
+
+  std::vector<unsigned char> manifest_data;
+  ASSERT_NO_THROW(manifest_data = builder.sign(asset_path, output_path, signer));
+  ASSERT_FALSE(manifest_data.empty());
+
+  ASSERT_TRUE(std::filesystem::exists(output_path));
+
+  auto reader = c2pa::Reader(output_path);
+  ASSERT_NO_THROW(reader.json());
+}
+
+TEST_P(BuilderSmokeSignTest, SignsStreamTypes) {
+  fs::path current_dir = fs::path(__FILE__).parent_path();
+
+  // Construct the paths relative to the current directory
+  fs::path manifest_path = current_dir / "../tests/fixtures/training.json";
+  fs::path certs_path = current_dir / "../tests/fixtures/es256_certs.pem";
+  fs::path asset_path = current_dir / "../tests/fixtures" / GetParam();
+
+  auto manifest = c2pa_test::read_text_file(manifest_path);
+  auto certs = c2pa_test::read_text_file(certs_path);
+  auto p_key = c2pa_test::read_text_file(current_dir / "../tests/fixtures/es256_private.key");
+
+  // Get mimetype from file extension
+  std::string mime_type = get_mime_type_from_extension(GetParam());
+
+  // Create a signer
+  auto signer = c2pa::Signer("Es256", certs, p_key, "http://timestamp.digicert.com");
+  auto builder = c2pa::Builder(manifest);
+
+  // Open input stream
+  std::ifstream source(asset_path, std::ios::binary);
+  ASSERT_TRUE(source) << "Failed to open source file: " << asset_path;
+
+  // Create output stream
+  std::stringstream output_buffer(std::ios::in | std::ios::out | std::ios::binary);
+  std::iostream& dest = output_buffer;
+
+  // Sign
+  std::vector<unsigned char> manifest_data;
+  ASSERT_NO_THROW(manifest_data = builder.sign(mime_type, source, dest, signer));
+  ASSERT_FALSE(manifest_data.empty());
+
+  source.close();
+
+  // Rewind output stream and verify with Reader
+  dest.flush();
+  dest.seekg(0, std::ios::beg);
+
+  auto reader = c2pa::Reader(mime_type, dest);
+  std::string json_result;
+  ASSERT_NO_THROW(json_result = reader.json());
+  ASSERT_FALSE(json_result.empty());
 }
 
 TEST(BuilderErrorHandling, EmptyManifestJsonReturnsError)
@@ -61,7 +224,6 @@ TEST(BuilderErrorHandling, MalformedJsonManifestReturnsErrorWithContext)
     EXPECT_THROW(c2pa::Builder(context, "{ invalid json"), c2pa::C2paException);
 }
 
-// Consistency tests: Ensure both APIs behave the same for error cases
 TEST(BuilderErrorHandling, JsonErrorsBehaveSameWithAndWithoutContext)
 {
     std::vector<std::string> bad_inputs = {
@@ -89,7 +251,6 @@ TEST(BuilderErrorHandling, JsonErrorsBehaveSameWithAndWithoutContext)
     }
 }
 
-// Test that valid JSON works with both APIs
 TEST(BuilderErrorHandling, ValidJsonWorksWithAndWithoutContext)
 {
     std::string valid_json = R"({"claim_generator": "test"})";
@@ -106,7 +267,6 @@ TEST(BuilderErrorHandling, ValidJsonWorksWithAndWithoutContext)
     });
 }
 
-// Test that failed construction doesn't leak memory
 TEST(BuilderErrorHandling, FailedConstructionWithAndWithoutContext)
 {
     for (int i = 0; i < 100; i++) {
@@ -129,7 +289,6 @@ TEST(BuilderErrorHandling, FailedConstructionWithAndWithoutContext)
     }
 }
 
-// Test that exception messages are meaningful
 TEST(BuilderErrorHandling, ErrorMessagesWithAndWithoutContext)
 {
     // Without context
@@ -152,7 +311,7 @@ TEST(BuilderErrorHandling, ErrorMessagesWithAndWithoutContext)
     }
 }
 
-TEST(Builder, AddAnActionAndSign)
+TEST_F(BuilderTest, AddAnActionAndSign)
 {
     fs::path current_dir = fs::path(__FILE__).parent_path();
 
@@ -161,7 +320,7 @@ TEST(Builder, AddAnActionAndSign)
     fs::path certs_path = current_dir / "../tests/fixtures/es256_certs.pem";
     fs::path image_path = current_dir / "../tests/fixtures/A.jpg";
     fs::path signed_image_path = current_dir / "../tests/fixtures/A.jpg";
-    fs::path output_path = current_dir / "../build/examples/image_with_one_action.jpg";
+    fs::path output_path = get_temp_path("image_with_one_action.jpg");
 
     auto manifest = c2pa_test::read_text_file(manifest_path);
     auto certs = c2pa_test::read_text_file(certs_path);
@@ -169,8 +328,6 @@ TEST(Builder, AddAnActionAndSign)
 
     // Create a signer
     c2pa::Signer signer = c2pa::Signer("Es256", certs, p_key, "http://timestamp.digicert.com");
-
-    std::filesystem::remove(output_path.c_str()); // remove the file if it exists
 
     auto builder = c2pa::Builder(manifest);
 
@@ -245,7 +402,7 @@ TEST(Builder, AddAnActionAndSign)
     ASSERT_EQ(our_action["parameters"]["name"], "brightnesscontrast");
 };
 
-TEST(Builder, AddMultipleActionsAndSign)
+TEST_F(BuilderTest, AddAnActionAndSignUsingContext)
 {
     fs::path current_dir = fs::path(__FILE__).parent_path();
 
@@ -254,7 +411,7 @@ TEST(Builder, AddMultipleActionsAndSign)
     fs::path certs_path = current_dir / "../tests/fixtures/es256_certs.pem";
     fs::path image_path = current_dir / "../tests/fixtures/A.jpg";
     fs::path signed_image_path = current_dir / "../tests/fixtures/A.jpg";
-    fs::path output_path = current_dir / "../build/examples/image_with_multiple_actions.jpg";
+    fs::path output_path = get_temp_path("image_with_one_action_context.jpg");
 
     auto manifest = c2pa_test::read_text_file(manifest_path);
     auto certs = c2pa_test::read_text_file(certs_path);
@@ -263,7 +420,98 @@ TEST(Builder, AddMultipleActionsAndSign)
     // Create a signer
     c2pa::Signer signer = c2pa::Signer("Es256", certs, p_key, "http://timestamp.digicert.com");
 
-    std::filesystem::remove(output_path.c_str()); // remove the file if it exists
+    // Create a Context and pass it to the Builder
+    auto context = c2pa::Context::create();
+    auto builder = c2pa::Builder(context, manifest);
+
+    // Add an action to the builder
+    string action_json = R"({
+        "action": "c2pa.color_adjustments",
+        "parameters": {
+            "name": "brightnesscontrast"
+        }
+    })";
+    builder.add_action(action_json);
+
+    // Sign with the added actions. The Builder returns manifest bytes
+    std::vector<unsigned char> manifest_data;
+    ASSERT_NO_THROW(manifest_data = builder.sign(signed_image_path, output_path, signer));
+
+    // Read to verify (also using context)
+    auto reader = c2pa::Reader(context, output_path);
+    string json_result;
+    ASSERT_NO_THROW(json_result = reader.json());
+    ASSERT_TRUE(std::filesystem::exists(output_path));
+
+    // Parse the JSON result for structured validation
+    json manifest_json;
+    ASSERT_NO_THROW(manifest_json = json::parse(json_result));
+
+    // Get the active manifest
+    ASSERT_TRUE(manifest_json.contains("manifests"));
+    ASSERT_TRUE(manifest_json.contains("active_manifest"));
+    string active_manifest_label = manifest_json["active_manifest"];
+    ASSERT_TRUE(manifest_json["manifests"].contains(active_manifest_label));
+    json active_manifest = manifest_json["manifests"][active_manifest_label];
+    ASSERT_TRUE(active_manifest.contains("assertions"));
+    ASSERT_TRUE(active_manifest["assertions"].is_array());
+
+    // Find the c2pa.actions assertion
+    json actions_assertion;
+    bool found_actions_assertion = false;
+    for (const auto& assertion : active_manifest["assertions"]) {
+        if (assertion.contains("label") && assertion["label"] == "c2pa.actions.v2") {
+            actions_assertion = assertion;
+            found_actions_assertion = true;
+            break;
+        }
+    }
+    ASSERT_TRUE(found_actions_assertion);
+
+    // Verify the actions assertion has the expected structure
+    ASSERT_TRUE(actions_assertion.contains("data"));
+    ASSERT_TRUE(actions_assertion["data"].contains("actions"));
+    ASSERT_TRUE(actions_assertion["data"]["actions"].is_array());
+    json actions_array = actions_assertion["data"]["actions"];
+    ASSERT_FALSE(actions_array.empty());
+
+    // Verify the action we added is here...
+    json our_action;
+    bool found_our_action = false;
+    for (const auto& action : actions_array) {
+        if (action.contains("action") && action["action"] == "c2pa.color_adjustments") {
+            our_action = action;
+            found_our_action = true;
+            break;
+        }
+    }
+    ASSERT_TRUE(found_our_action);
+
+    // Verify the action structure
+    ASSERT_TRUE(our_action.contains("action"));
+    ASSERT_EQ(our_action["action"], "c2pa.color_adjustments");
+    ASSERT_TRUE(our_action.contains("parameters"));
+    ASSERT_TRUE(our_action["parameters"].contains("name"));
+    ASSERT_EQ(our_action["parameters"]["name"], "brightnesscontrast");
+};
+
+TEST_F(BuilderTest, AddMultipleActionsAndSign)
+{
+    fs::path current_dir = fs::path(__FILE__).parent_path();
+
+    // Construct the paths relative to the current directory
+    fs::path manifest_path = current_dir / "../tests/fixtures/training.json";
+    fs::path certs_path = current_dir / "../tests/fixtures/es256_certs.pem";
+    fs::path image_path = current_dir / "../tests/fixtures/A.jpg";
+    fs::path signed_image_path = current_dir / "../tests/fixtures/A.jpg";
+    fs::path output_path = get_temp_path("image_with_multiple_actions.jpg");
+
+    auto manifest = c2pa_test::read_text_file(manifest_path);
+    auto certs = c2pa_test::read_text_file(certs_path);
+    auto p_key = c2pa_test::read_text_file(current_dir / "../tests/fixtures/es256_private.key");
+
+    // Create a signer
+    c2pa::Signer signer = c2pa::Signer("Es256", certs, p_key, "http://timestamp.digicert.com");
 
     auto builder = c2pa::Builder(manifest);
 
@@ -367,7 +615,7 @@ TEST(Builder, AddMultipleActionsAndSign)
     ASSERT_EQ(filtered_action["description"], "Filtering applied");
 };
 
-TEST(Builder, SignImageFileOnly)
+TEST_F(BuilderTest, AddMultipleActionsAndSignUsingContext)
 {
     fs::path current_dir = fs::path(__FILE__).parent_path();
 
@@ -376,7 +624,129 @@ TEST(Builder, SignImageFileOnly)
     fs::path certs_path = current_dir / "../tests/fixtures/es256_certs.pem";
     fs::path image_path = current_dir / "../tests/fixtures/A.jpg";
     fs::path signed_image_path = current_dir / "../tests/fixtures/A.jpg";
-    fs::path output_path = current_dir / "../build/examples/training_image_only.jpg";
+    fs::path output_path = get_temp_path("image_with_multiple_actions_context.jpg");
+
+    auto manifest = c2pa_test::read_text_file(manifest_path);
+    auto certs = c2pa_test::read_text_file(certs_path);
+    auto p_key = c2pa_test::read_text_file(current_dir / "../tests/fixtures/es256_private.key");
+
+    // Create a signer
+    c2pa::Signer signer = c2pa::Signer("Es256", certs, p_key, "http://timestamp.digicert.com");
+
+    // Create a Context and pass it to the Builder
+    auto context = c2pa::Context::create();
+    auto builder = c2pa::Builder(context, manifest);
+
+    // Add multiple actions to the builder
+    string action_json_1 = R"({
+        "action": "c2pa.color_adjustments",
+        "parameters": {
+            "name": "brightnesscontrast"
+        }
+    })";
+    builder.add_action(action_json_1);
+    string action_json_2 = R"({
+        "action": "c2pa.filtered",
+        "parameters": {
+            "name": "A filter"
+        },
+        "description": "Filtering applied"
+    })";
+    builder.add_action(action_json_2);
+
+    // Sign with the added actions
+    std::vector<unsigned char> manifest_data;
+    ASSERT_NO_THROW(manifest_data = builder.sign(signed_image_path, output_path, signer));
+
+    // Read to verify (also using context)
+    auto reader = c2pa::Reader(context, output_path);
+    string json_result;
+    ASSERT_NO_THROW(json_result = reader.json());
+    ASSERT_TRUE(std::filesystem::exists(output_path));
+
+    // Parse the JSON result for structured validation
+    json manifest_json;
+    ASSERT_NO_THROW(manifest_json = json::parse(json_result));
+
+    // Get the active manifest
+    ASSERT_TRUE(manifest_json.contains("manifests"));
+    ASSERT_TRUE(manifest_json.contains("active_manifest"));
+    string active_manifest_label = manifest_json["active_manifest"];
+    ASSERT_TRUE(manifest_json["manifests"].contains(active_manifest_label));
+    json active_manifest = manifest_json["manifests"][active_manifest_label];
+    ASSERT_TRUE(active_manifest.contains("assertions"));
+    ASSERT_TRUE(active_manifest["assertions"].is_array());
+
+    // Find the c2pa.actions assertion
+    json actions_assertion;
+    bool found_actions_assertion = false;
+    for (const auto& assertion : active_manifest["assertions"]) {
+        if (assertion.contains("label") && assertion["label"] == "c2pa.actions.v2") {
+            actions_assertion = assertion;
+            found_actions_assertion = true;
+            break;
+        }
+    }
+    ASSERT_TRUE(found_actions_assertion);
+
+    // Verify the actions assertion structure
+    ASSERT_TRUE(actions_assertion.contains("data"));
+    ASSERT_TRUE(actions_assertion["data"].contains("actions"));
+    ASSERT_TRUE(actions_assertion["data"]["actions"].is_array());
+
+    // Verify both actions we added are in the actions array
+    json actions_array = actions_assertion["data"]["actions"];
+    ASSERT_FALSE(actions_array.empty());
+    ASSERT_GE(actions_array.size(), 2);
+
+    // Find our added actions...
+    json color_adjustments_action;
+    json filtered_action;
+    bool found_color_adjustments = false;
+    bool found_filtered = false;
+
+    for (const auto& action : actions_array) {
+        if (action.contains("action")) {
+            if (action["action"] == "c2pa.color_adjustments") {
+                color_adjustments_action = action;
+                found_color_adjustments = true;
+            } else if (action["action"] == "c2pa.filtered") {
+                filtered_action = action;
+                found_filtered = true;
+            }
+        }
+    }
+
+    ASSERT_TRUE(found_color_adjustments);
+    ASSERT_TRUE(found_filtered);
+
+    // Verify the color_adjustments action structure
+    ASSERT_TRUE(color_adjustments_action.contains("action"));
+    ASSERT_EQ(color_adjustments_action["action"], "c2pa.color_adjustments");
+    ASSERT_TRUE(color_adjustments_action.contains("parameters"));
+    ASSERT_TRUE(color_adjustments_action["parameters"].contains("name"));
+    ASSERT_EQ(color_adjustments_action["parameters"]["name"], "brightnesscontrast");
+
+    // Verify the filtered action structure
+    ASSERT_TRUE(filtered_action.contains("action"));
+    ASSERT_EQ(filtered_action["action"], "c2pa.filtered");
+    ASSERT_TRUE(filtered_action.contains("parameters"));
+    ASSERT_TRUE(filtered_action["parameters"].contains("name"));
+    ASSERT_EQ(filtered_action["parameters"]["name"], "A filter");
+    ASSERT_TRUE(filtered_action.contains("description"));
+    ASSERT_EQ(filtered_action["description"], "Filtering applied");
+};
+
+TEST_F(BuilderTest, SignImageFileOnly)
+{
+    fs::path current_dir = fs::path(__FILE__).parent_path();
+
+    // Construct the paths relative to the current directory
+    fs::path manifest_path = current_dir / "../tests/fixtures/training.json";
+    fs::path certs_path = current_dir / "../tests/fixtures/es256_certs.pem";
+    fs::path image_path = current_dir / "../tests/fixtures/A.jpg";
+    fs::path signed_image_path = current_dir / "../tests/fixtures/A.jpg";
+    fs::path output_path = get_temp_path("training_image_only.jpg");
 
     auto manifest = c2pa_test::read_text_file(manifest_path);
     auto certs = c2pa_test::read_text_file(certs_path);
@@ -384,8 +754,6 @@ TEST(Builder, SignImageFileOnly)
 
     // create a signer
     c2pa::Signer signer = c2pa::Signer("Es256", certs, p_key, "http://timestamp.digicert.com");
-
-    std::filesystem::remove(output_path.c_str()); // remove the file if it exists
 
     auto builder = c2pa::Builder(manifest);
     // the Builder returns manifest bytes
@@ -398,10 +766,11 @@ TEST(Builder, SignImageFileOnly)
     ASSERT_TRUE(std::filesystem::exists(output_path));
 };
 
-TEST(Builder, SignImageFileNoThumbnailAutoGenThreadLocalSettings)
+TEST_F(BuilderTest, SignImageFileNoThumbnailAutoGenThreadLocalSettings)
 {
     // Run in separate thread for complete test isolation (thread-local settings won't leak)
-    std::thread test_thread([]() {
+    fs::path temp_output = get_temp_path("training_image_only_thread_local.jpg");
+    std::thread test_thread([temp_output]() {
         fs::path current_dir = fs::path(__FILE__).parent_path();
 
         // Construct the paths relative to the current directory
@@ -409,7 +778,7 @@ TEST(Builder, SignImageFileNoThumbnailAutoGenThreadLocalSettings)
         fs::path certs_path = current_dir / "../tests/fixtures/es256_certs.pem";
         fs::path image_path = current_dir / "../tests/fixtures/A.jpg";
         fs::path signed_image_path = current_dir / "../tests/fixtures/A.jpg";
-        fs::path output_path = current_dir / "../build/examples/training_image_only.jpg";
+        fs::path output_path = temp_output;
 
         auto manifest = c2pa_test::read_text_file(manifest_path);
         auto certs = c2pa_test::read_text_file(certs_path);
@@ -420,8 +789,6 @@ TEST(Builder, SignImageFileNoThumbnailAutoGenThreadLocalSettings)
 
         // create a signer
         c2pa::Signer signer = c2pa::Signer("Es256", certs, p_key, "http://timestamp.digicert.com");
-
-        std::filesystem::remove(output_path.c_str()); // remove the file if it exists
 
         auto builder = c2pa::Builder(manifest);
         // the Builder returns manifest bytes
@@ -440,7 +807,7 @@ TEST(Builder, SignImageFileNoThumbnailAutoGenThreadLocalSettings)
     test_thread.join();
 };
 
-TEST(Builder, SignImageFileNoThumbnailAutoGen)
+TEST_F(BuilderTest, SignImageFileNoThumbnailAutoGen)
 {
     fs::path current_dir = fs::path(__FILE__).parent_path();
 
@@ -448,8 +815,8 @@ TEST(Builder, SignImageFileNoThumbnailAutoGen)
     fs::path manifest_path = current_dir / "../tests/fixtures/training.json";
     fs::path certs_path = current_dir / "../tests/fixtures/es256_certs.pem";
     fs::path signed_image_path = current_dir / "../tests/fixtures/A.jpg";
-    fs::path output_path_with_context = current_dir / "../build/examples/settings_no_thumbnails.jpg";
-    fs::path output_path_no_context = current_dir / "../build/examples/settings_with_thumbnails.jpg";
+    fs::path output_path_with_context = get_temp_path("settings_no_thumbnails.jpg");
+    fs::path output_path_no_context = get_temp_path("settings_with_thumbnails.jpg");
 
     auto manifest = c2pa_test::read_text_file(manifest_path);
     auto certs = c2pa_test::read_text_file(certs_path);
@@ -457,9 +824,6 @@ TEST(Builder, SignImageFileNoThumbnailAutoGen)
 
     // Create a signer
     c2pa::Signer signer = c2pa::Signer("Es256", certs, p_key, "http://timestamp.digicert.com");
-
-    std::filesystem::remove(output_path_with_context.c_str());
-    std::filesystem::remove(output_path_no_context.c_str());
 
     // Test 1: Create context with specific settings via JSON
     auto context = c2pa::Context::from_json("{\"builder\": { \"thumbnail\": {\"enabled\": false}}}");
@@ -503,7 +867,7 @@ TEST(Builder, SignImageFileNoThumbnailAutoGen)
     EXPECT_TRUE(parsed_no_context["manifests"][active_manifest_value_no_context].contains("thumbnail"));
 };
 
-TEST(Builder, SignImageThumbnailSettingsFileToml)
+TEST_F(BuilderTest, SignImageThumbnailSettingsFileToml)
 {
     fs::path current_dir = fs::path(__FILE__).parent_path();
 
@@ -511,8 +875,8 @@ TEST(Builder, SignImageThumbnailSettingsFileToml)
     fs::path manifest_path = current_dir / "../tests/fixtures/training.json";
     fs::path certs_path = current_dir / "../tests/fixtures/es256_certs.pem";
     fs::path signed_image_path = current_dir / "../tests/fixtures/A.jpg";
-    fs::path output_path_with_context = current_dir / "../build/examples/image_context_settings_toml.jpg";
-    fs::path output_path_no_context = current_dir / "../build/examples/image_no_context_toml.jpg";
+    fs::path output_path_with_context = get_temp_path("image_context_settings_toml.jpg");
+    fs::path output_path_no_context = get_temp_path("image_no_context_toml.jpg");
 
     auto manifest = c2pa_test::read_text_file(manifest_path);
     auto certs = c2pa_test::read_text_file(certs_path);
@@ -520,9 +884,6 @@ TEST(Builder, SignImageThumbnailSettingsFileToml)
 
     // Create a signer
     c2pa::Signer signer = c2pa::Signer("Es256", certs, p_key, "http://timestamp.digicert.com");
-
-    std::filesystem::remove(output_path_with_context.c_str());
-    std::filesystem::remove(output_path_no_context.c_str());
 
     // Create context with specific settings via toml, by loading the TOML file
     fs::path settings_path = current_dir / "../tests/fixtures/settings/test_settings_no_thumbnail.toml";
@@ -572,7 +933,7 @@ TEST(Builder, SignImageThumbnailSettingsFileToml)
     EXPECT_TRUE(parsed_with_thumbnail["manifests"][active_manifest_value_no_context].contains("thumbnail"));
 };
 
-TEST(Builder, SignImageThumbnailSettingsFileJson)
+TEST_F(BuilderTest, SignImageThumbnailSettingsFileJson)
 {
     fs::path current_dir = fs::path(__FILE__).parent_path();
 
@@ -580,8 +941,8 @@ TEST(Builder, SignImageThumbnailSettingsFileJson)
     fs::path manifest_path = current_dir / "../tests/fixtures/training.json";
     fs::path certs_path = current_dir / "../tests/fixtures/es256_certs.pem";
     fs::path signed_image_path = current_dir / "../tests/fixtures/A.jpg";
-    fs::path output_path_with_context = current_dir / "../build/examples/image_context_settings_json.jpg";
-    fs::path output_path_no_context = current_dir / "../build/examples/image_no_context_json.jpg";
+    fs::path output_path_with_context = get_temp_path("image_context_settings_json.jpg");
+    fs::path output_path_no_context = get_temp_path("image_no_context_json.jpg");
 
     auto manifest = c2pa_test::read_text_file(manifest_path);
     auto certs = c2pa_test::read_text_file(certs_path);
@@ -589,9 +950,6 @@ TEST(Builder, SignImageThumbnailSettingsFileJson)
 
     // Create a signer
     c2pa::Signer signer = c2pa::Signer("Es256", certs, p_key, "http://timestamp.digicert.com");
-
-    std::filesystem::remove(output_path_with_context.c_str());
-    std::filesystem::remove(output_path_no_context.c_str());
 
     // Create context with specific settings via JSON, by loading the JSON file with the settings
     fs::path settings_path = current_dir / "../tests/fixtures/settings/test_settings_no_thumbnail.json";
@@ -641,7 +999,7 @@ TEST(Builder, SignImageThumbnailSettingsFileJson)
     EXPECT_TRUE(parsed_with_thumbnail["manifests"][active_manifest_value_no_context].contains("thumbnail"));
 };
 
-TEST(Builder, SignImageThumbnailSettingsObject)
+TEST_F(BuilderTest, SignImageThumbnailSettingsObject)
 {
     fs::path current_dir = fs::path(__FILE__).parent_path();
 
@@ -649,7 +1007,7 @@ TEST(Builder, SignImageThumbnailSettingsObject)
     fs::path manifest_path = current_dir / "../tests/fixtures/training.json";
     fs::path certs_path = current_dir / "../tests/fixtures/es256_certs.pem";
     fs::path signed_image_path = current_dir / "../tests/fixtures/A.jpg";
-    fs::path output_path_no_thumbnail = current_dir / "../build/examples/image_no_thumbnail_incremental.jpg";
+    fs::path output_path_no_thumbnail = get_temp_path("image_no_thumbnail_incremental.jpg");
 
     auto manifest = c2pa_test::read_text_file(manifest_path);
     auto certs = c2pa_test::read_text_file(certs_path);
@@ -657,8 +1015,6 @@ TEST(Builder, SignImageThumbnailSettingsObject)
 
     // Create a signer
     c2pa::Signer signer = c2pa::Signer("Es256", certs, p_key, "http://timestamp.digicert.com");
-
-    std::filesystem::remove(output_path_no_thumbnail);
 
     // Here we are going to build settings, field by field
     // Start with default settings
@@ -691,7 +1047,7 @@ TEST(Builder, SignImageThumbnailSettingsObject)
     EXPECT_FALSE(parsed["manifests"][active_manifest].contains("thumbnail"));
 }
 
-TEST(Builder, SignImageThumbnailSettingsIncrementalObject)
+TEST_F(BuilderTest, SignImageThumbnailSettingsIncrementalObject)
 {
     fs::path current_dir = fs::path(__FILE__).parent_path();
 
@@ -699,7 +1055,7 @@ TEST(Builder, SignImageThumbnailSettingsIncrementalObject)
     fs::path manifest_path = current_dir / "../tests/fixtures/training.json";
     fs::path certs_path = current_dir / "../tests/fixtures/es256_certs.pem";
     fs::path signed_image_path = current_dir / "../tests/fixtures/A.jpg";
-    fs::path output_path_no_thumbnail = current_dir / "../build/examples/image_no_thumbnail_incremental.jpg";
+    fs::path output_path_no_thumbnail = get_temp_path("image_no_thumbnail_incremental2.jpg");
 
     auto manifest = c2pa_test::read_text_file(manifest_path);
     auto certs = c2pa_test::read_text_file(certs_path);
@@ -707,8 +1063,6 @@ TEST(Builder, SignImageThumbnailSettingsIncrementalObject)
 
     // Create a signer
     c2pa::Signer signer = c2pa::Signer("Es256", certs, p_key, "http://timestamp.digicert.com");
-
-    std::filesystem::remove(output_path_no_thumbnail);
 
     // Here we are going to update a settings object we just build
     c2pa::Settings settings;
@@ -745,7 +1099,7 @@ TEST(Builder, SignImageThumbnailSettingsIncrementalObject)
     EXPECT_FALSE(parsed["manifests"][active_manifest].contains("thumbnail"));
 }
 
-TEST(Builder, SignImageFileWithResource)
+TEST_F(BuilderTest, SignImageFileWithResource)
 {
     fs::path current_dir = fs::path(__FILE__).parent_path();
 
@@ -754,7 +1108,7 @@ TEST(Builder, SignImageFileWithResource)
     fs::path certs_path = current_dir / "../tests/fixtures/es256_certs.pem";
     fs::path image_path = current_dir / "../tests/fixtures/A.jpg";
     fs::path signed_image_path = current_dir / "../tests/fixtures/A.jpg";
-    fs::path output_path = current_dir / "../build/examples/training_resource_only.jpg";
+    fs::path output_path = get_temp_path("training_resource_only.jpg");
 
     auto manifest = c2pa_test::read_text_file(manifest_path);
     auto certs = c2pa_test::read_text_file(certs_path);
@@ -762,8 +1116,6 @@ TEST(Builder, SignImageFileWithResource)
 
     // create a signer
     c2pa::Signer signer = c2pa::Signer("Es256", certs, p_key, "http://timestamp.digicert.com");
-
-    std::filesystem::remove(output_path.c_str()); // remove the file if it exists
 
     auto builder = c2pa::Builder(manifest);
     // add a resource: a thumbnail
@@ -779,7 +1131,41 @@ TEST(Builder, SignImageFileWithResource)
     ASSERT_TRUE(std::filesystem::exists(output_path));
 };
 
-TEST(Builder, SignWithMultipleResources)
+TEST_F(BuilderTest, SignImageFileWithResourceUsingContext)
+{
+    fs::path current_dir = fs::path(__FILE__).parent_path();
+
+    // Construct the paths relative to the current directory
+    fs::path manifest_path = current_dir / "../tests/fixtures/training.json";
+    fs::path certs_path = current_dir / "../tests/fixtures/es256_certs.pem";
+    fs::path image_path = current_dir / "../tests/fixtures/A.jpg";
+    fs::path signed_image_path = current_dir / "../tests/fixtures/A.jpg";
+    fs::path output_path = get_temp_path("training_resource_only_context.jpg");
+
+    auto manifest = c2pa_test::read_text_file(manifest_path);
+    auto certs = c2pa_test::read_text_file(certs_path);
+    auto p_key = c2pa_test::read_text_file(current_dir / "../tests/fixtures/es256_private.key");
+
+    // create a signer
+    c2pa::Signer signer = c2pa::Signer("Es256", certs, p_key, "http://timestamp.digicert.com");
+
+    // Create a Context and pass it to the Builder
+    auto context = c2pa::Context::create();
+    auto builder = c2pa::Builder(context, manifest);
+    // add a resource: a thumbnail
+    builder.add_resource("thumbnail", image_path);
+
+    // sign
+    std::vector<unsigned char> manifest_data;
+    ASSERT_NO_THROW(manifest_data = builder.sign(signed_image_path, output_path, signer));
+
+    // read to verify signature (also using context)
+    auto reader = c2pa::Reader(context, output_path);
+    ASSERT_NO_THROW(reader.json());
+    ASSERT_TRUE(std::filesystem::exists(output_path));
+};
+
+TEST_F(BuilderTest, SignWithMultipleResources)
 {
     fs::path current_dir = fs::path(__FILE__).parent_path();
 
@@ -790,7 +1176,7 @@ TEST(Builder, SignWithMultipleResources)
     fs::path image_resource = current_dir / "../tests/fixtures/C.jpg";
     fs::path image_resource_other = current_dir / "../tests/fixtures/sample1.gif";
     fs::path signed_image_path = current_dir / "../tests/fixtures/A.jpg";
-    fs::path output_path = current_dir / "../build/examples/multiple_resources.jpg";
+    fs::path output_path = get_temp_path("multiple_resources.jpg");
 
     auto manifest = c2pa_test::read_text_file(manifest_path);
     auto certs = c2pa_test::read_text_file(certs_path);
@@ -798,8 +1184,6 @@ TEST(Builder, SignWithMultipleResources)
 
     // create a signer
     c2pa::Signer signer = c2pa::Signer("Es256", certs, p_key, "http://timestamp.digicert.com");
-
-    std::filesystem::remove(output_path.c_str()); // remove the file if it exists
 
     auto builder = c2pa::Builder(manifest);
 
@@ -818,7 +1202,7 @@ TEST(Builder, SignWithMultipleResources)
     ASSERT_TRUE(std::filesystem::exists(output_path));
 }
 
-TEST(Builder, SignImageFileWithIngredient)
+TEST_F(BuilderTest, SignImageFileWithIngredient)
 {
     fs::path current_dir = fs::path(__FILE__).parent_path();
 
@@ -827,7 +1211,7 @@ TEST(Builder, SignImageFileWithIngredient)
     fs::path certs_path = current_dir / "../tests/fixtures/es256_certs.pem";
     fs::path image_path = current_dir / "../tests/fixtures/A.jpg";
     fs::path signed_image_path = current_dir / "../tests/fixtures/A.jpg";
-    fs::path output_path = current_dir / "../build/examples/training_ingredient_only.jpg";
+    fs::path output_path = get_temp_path("training_ingredient_only.jpg");
 
     auto manifest = c2pa_test::read_text_file(manifest_path);
     auto certs = c2pa_test::read_text_file(certs_path);
@@ -835,8 +1219,6 @@ TEST(Builder, SignImageFileWithIngredient)
 
     // create a signer
     c2pa::Signer signer = c2pa::Signer("Es256", certs, p_key, "http://timestamp.digicert.com");
-
-    std::filesystem::remove(output_path.c_str()); // remove the file if it exists
 
     auto builder = c2pa::Builder(manifest);
 
@@ -855,7 +1237,7 @@ TEST(Builder, SignImageFileWithIngredient)
     ASSERT_TRUE(std::filesystem::exists(output_path));
 };
 
-TEST(Builder, SignImageFileWithResourceAndIngredient)
+TEST_F(BuilderTest, SignImageFileWithResourceAndIngredient)
 {
     fs::path current_dir = fs::path(__FILE__).parent_path();
 
@@ -864,7 +1246,7 @@ TEST(Builder, SignImageFileWithResourceAndIngredient)
     fs::path certs_path = current_dir / "../tests/fixtures/es256_certs.pem";
     fs::path image_path = current_dir / "../tests/fixtures/A.jpg";
     fs::path signed_image_path = current_dir / "../tests/fixtures/A.jpg";
-    fs::path output_path = current_dir / "../build/examples/training.jpg";
+    fs::path output_path = get_temp_path("training.jpg");
 
     auto manifest = c2pa_test::read_text_file(manifest_path);
     auto certs = c2pa_test::read_text_file(certs_path);
@@ -872,8 +1254,6 @@ TEST(Builder, SignImageFileWithResourceAndIngredient)
 
     // create a signer
     c2pa::Signer signer = c2pa::Signer("Es256", certs, p_key, "http://timestamp.digicert.com");
-    std::filesystem::remove(output_path.c_str()); // remove the file if it exists
-
     auto builder = c2pa::Builder(manifest);
     // add a resource: a thumbnail
     builder.add_resource("thumbnail", image_path);
@@ -893,7 +1273,7 @@ TEST(Builder, SignImageFileWithResourceAndIngredient)
     ASSERT_TRUE(std::filesystem::exists(output_path));
 };
 
-TEST(Builder, SignVideoFileWithMultipleIngredients)
+TEST_F(BuilderTest, SignVideoFileWithMultipleIngredients)
 {
     fs::path current_dir = fs::path(__FILE__).parent_path();
 
@@ -903,7 +1283,7 @@ TEST(Builder, SignVideoFileWithMultipleIngredients)
     fs::path signed_video_path = current_dir / "../tests/fixtures/video1.mp4";
     fs::path audio_ingredient = current_dir / "../tests/fixtures/sample1_signed.wav";
     fs::path image_ingredient = current_dir / "../tests/fixtures/A.jpg";
-    fs::path output_path = current_dir / "../build/examples/video1_signed.mp4";
+    fs::path output_path = get_temp_path("video1_signed_multi_ingredients.mp4");
 
     auto manifest = c2pa_test::read_text_file(manifest_path);
     auto certs = c2pa_test::read_text_file(certs_path);
@@ -911,8 +1291,6 @@ TEST(Builder, SignVideoFileWithMultipleIngredients)
 
     // create a signer
     c2pa::Signer signer = c2pa::Signer("Es256", certs, p_key, "http://timestamp.digicert.com");
-
-    std::filesystem::remove(output_path.c_str()); // remove the file if it exists
 
     // create the builder
     auto builder = c2pa::Builder(manifest);
@@ -935,7 +1313,48 @@ TEST(Builder, SignVideoFileWithMultipleIngredients)
     ASSERT_TRUE(std::filesystem::exists(output_path));
 };
 
-TEST(Builder, SignVideoFileWithMultipleIngredientsAndResources)
+TEST_F(BuilderTest, SignVideoFileWithMultipleIngredientsUsingContext)
+{
+    fs::path current_dir = fs::path(__FILE__).parent_path();
+
+    // Construct the paths relative to the current directory
+    fs::path manifest_path = current_dir / "../tests/fixtures/training.json";
+    fs::path certs_path = current_dir / "../tests/fixtures/es256_certs.pem";
+    fs::path signed_video_path = current_dir / "../tests/fixtures/video1.mp4";
+    fs::path audio_ingredient = current_dir / "../tests/fixtures/sample1_signed.wav";
+    fs::path image_ingredient = current_dir / "../tests/fixtures/A.jpg";
+    fs::path output_path = get_temp_path("video1_signed_context.mp4");
+
+    auto manifest = c2pa_test::read_text_file(manifest_path);
+    auto certs = c2pa_test::read_text_file(certs_path);
+    auto p_key = c2pa_test::read_text_file(current_dir / "../tests/fixtures/es256_private.key");
+
+    // create a signer
+    c2pa::Signer signer = c2pa::Signer("Es256", certs, p_key, "http://timestamp.digicert.com");
+
+    // create the builder with context
+    auto context = c2pa::Context::create();
+    auto builder = c2pa::Builder(context, manifest);
+
+    // add the ingredients for the video
+    string ingredient_video_json = "{\"title\":\"Test Video Ingredient\", \"relationship\": \"parentOf\"}";
+    builder.add_ingredient(ingredient_video_json, signed_video_path);
+    string ingredient_audio_json = "{\"title\":\"Test Audio Ingredient\", \"relationship\": \"componentOf\"}";
+    builder.add_ingredient(ingredient_audio_json, audio_ingredient);
+    string ingredient_image_json = "{\"title\":\"Test Image Ingredient\", \"relationship\": \"componentOf\"}";
+    builder.add_ingredient(ingredient_image_json, image_ingredient);
+
+    // sign
+    std::vector<unsigned char> manifest_data;
+    ASSERT_NO_THROW(manifest_data = builder.sign(signed_video_path, output_path, signer));
+
+    // read to verify signature (also using context)
+    auto reader = c2pa::Reader(context, output_path);
+    ASSERT_NO_THROW(reader.json());
+    ASSERT_TRUE(std::filesystem::exists(output_path));
+};
+
+TEST_F(BuilderTest, SignVideoFileWithMultipleIngredientsAndResources)
 {
     fs::path current_dir = fs::path(__FILE__).parent_path();
 
@@ -947,7 +1366,7 @@ TEST(Builder, SignVideoFileWithMultipleIngredientsAndResources)
     fs::path image_ingredient = current_dir / "../tests/fixtures/A.jpg";
     fs::path image_resource = current_dir / "../tests/fixtures/C.jpg";
     fs::path image_resource_other = current_dir / "../tests/fixtures/sample1.gif";
-    fs::path output_path = current_dir / "../build/examples/video1_signed_with_ingredients_and_resources.mp4";
+    fs::path output_path = get_temp_path("video1_signed_with_ingredients_and_resources.mp4");
 
     auto manifest = c2pa_test::read_text_file(manifest_path);
     auto certs = c2pa_test::read_text_file(certs_path);
@@ -955,8 +1374,6 @@ TEST(Builder, SignVideoFileWithMultipleIngredientsAndResources)
 
     // create a signer
     c2pa::Signer signer = c2pa::Signer("Es256", certs, p_key, "http://timestamp.digicert.com");
-
-    std::filesystem::remove(output_path.c_str()); // remove the file if it exists
 
     // create the builder
     auto builder = c2pa::Builder(manifest);
@@ -984,7 +1401,7 @@ TEST(Builder, SignVideoFileWithMultipleIngredientsAndResources)
     ASSERT_TRUE(std::filesystem::exists(output_path));
 };
 
-TEST(Builder, SignVideoFileWithMultipleIngredientsAndResourcesInterleaved)
+TEST_F(BuilderTest, SignVideoFileWithMultipleIngredientsAndResourcesInterleaved)
 {
     fs::path current_dir = fs::path(__FILE__).parent_path();
 
@@ -996,7 +1413,7 @@ TEST(Builder, SignVideoFileWithMultipleIngredientsAndResourcesInterleaved)
     fs::path image_ingredient = current_dir / "../tests/fixtures/A.jpg";
     fs::path image_resource = current_dir / "../tests/fixtures/C.jpg";
     fs::path image_resource_other = current_dir / "../tests/fixtures/sample1.gif";
-    fs::path output_path = current_dir / "../build/examples/video1_signed.mp4";
+    fs::path output_path = get_temp_path("video1_signed_interleaved.mp4");
 
     auto manifest = c2pa_test::read_text_file(manifest_path);
     auto certs = c2pa_test::read_text_file(certs_path);
@@ -1004,8 +1421,6 @@ TEST(Builder, SignVideoFileWithMultipleIngredientsAndResourcesInterleaved)
 
     // create a signer
     c2pa::Signer signer = c2pa::Signer("Es256", certs, p_key, "http://timestamp.digicert.com");
-    std::filesystem::remove(output_path.c_str()); // remove the file if it exists
-
     // create the builder
     auto builder = c2pa::Builder(manifest);
 
@@ -1030,54 +1445,7 @@ TEST(Builder, SignVideoFileWithMultipleIngredientsAndResourcesInterleaved)
     ASSERT_TRUE(std::filesystem::exists(output_path));
 };
 
-class SimplePathSignTest : public ::testing::TestWithParam<std::string> {};
-INSTANTIATE_TEST_SUITE_P(
-    BuilderSignCallToVerifyMiscFileTypes,
-    SimplePathSignTest,
-    ::testing::Values(
-        "A.jpg",
-        "C.jpg",
-        "C.dng",
-        "C_with_CAWG_data.jpg",
-        "sample1.gif",
-        "sample1.mp3",
-        "sample1.wav",
-        "sample1.webp",
-        "sample2.svg",
-        "video1.mp4"
-        )
-);
-
-TEST_P(SimplePathSignTest, SignsFileTypes) {
-  fs::path current_dir = fs::path(__FILE__).parent_path();
-
-  // Construct the paths relative to the current directory
-  fs::path manifest_path = current_dir / "../tests/fixtures/training.json";
-  fs::path certs_path = current_dir / "../tests/fixtures/es256_certs.pem";
-  fs::path asset_path = current_dir / "../tests/fixtures" / SimplePathSignTest::GetParam();
-
-  fs::path output_path = current_dir / "../build/examples" / SimplePathSignTest::GetParam();
-  std::filesystem::remove(output_path.c_str()); // remove the file if it exists
-
-  auto manifest = c2pa_test::read_text_file(manifest_path);
-  auto certs = c2pa_test::read_text_file(certs_path);
-  auto p_key = c2pa_test::read_text_file(current_dir / "../tests/fixtures/es256_private.key");
-
-  // create a signer
-  auto signer = c2pa::Signer("Es256", certs, p_key, "http://timestamp.digicert.com");
-  auto builder = c2pa::Builder(manifest);
-
-  std::vector<unsigned char> manifest_data;
-  ASSERT_NO_THROW(manifest_data = builder.sign(asset_path, output_path, signer));
-  ASSERT_FALSE(manifest_data.empty());
-
-  ASSERT_TRUE(std::filesystem::exists(output_path));
-
-  auto reader = c2pa::Reader(output_path);
-  ASSERT_NO_THROW(reader.json());
-}
-
-TEST(Builder, SignImageStreamWithoutContext)
+TEST_F(BuilderTest, SignImageStreamWithoutContext)
 {
     fs::path current_dir = fs::path(__FILE__).parent_path();
 
@@ -1117,7 +1485,7 @@ TEST(Builder, SignImageStreamWithoutContext)
     ASSERT_TRUE(json.find("cawg.training-mining") != std::string::npos);
 }
 
-TEST(Builder, SignImageStream)
+TEST_F(BuilderTest, SignImageStream)
 {
     fs::path current_dir = fs::path(__FILE__).parent_path();
 
@@ -1169,7 +1537,7 @@ TEST(Builder, SignImageStream)
     ASSERT_FALSE(manifest_data.empty());
 }
 
-TEST(Builder, SignImageStreamBuilderReaderDifferentContext)
+TEST_F(BuilderTest, SignImageStreamBuilderReaderDifferentContext)
 {
     fs::path current_dir = fs::path(__FILE__).parent_path();
 
@@ -1227,7 +1595,7 @@ TEST(Builder, SignImageStreamBuilderReaderDifferentContext)
     ASSERT_FALSE(manifest_data.empty());
 }
 
-TEST(Builder, SignImageWithIngredientHavingManifestStream)
+TEST_F(BuilderTest, SignImageWithIngredientHavingManifestStream)
 {
     fs::path current_dir = fs::path(__FILE__).parent_path();
 
@@ -1275,7 +1643,7 @@ TEST(Builder, SignImageWithIngredientHavingManifestStream)
     ASSERT_TRUE(json.find("cawg.training-mining") != std::string::npos);
 }
 
-TEST(Builder, SignStreamCloudUrl)
+TEST_F(BuilderTest, SignStreamCloudUrl)
 {
     try
     {
@@ -1333,7 +1701,7 @@ TEST(Builder, SignStreamCloudUrl)
     };
 }
 
-TEST(Builder, SignDataHashedEmbedded)
+TEST_F(BuilderTest, SignDataHashedEmbedded)
 {
     fs::path current_dir = fs::path(__FILE__).parent_path();
 
@@ -1369,7 +1737,45 @@ TEST(Builder, SignDataHashedEmbedded)
     ASSERT_NO_THROW(manifest_data = builder.sign_data_hashed_embeddable(signer, data_hash, "image/jpeg"));
 }
 
-TEST(Builder, SignDataHashedEmbeddedWithAsset)
+TEST_F(BuilderTest, SignDataHashedEmbeddedUsingContext)
+{
+    fs::path current_dir = fs::path(__FILE__).parent_path();
+
+    // Construct the paths relative to the current directory
+    fs::path manifest_path = current_dir / "../tests/fixtures/training.json";
+    fs::path certs_path = current_dir / "../tests/fixtures/es256_certs.pem";
+    // fs::path signed_image_path = current_dir / "../tests/fixtures/A.jpg";
+
+    auto manifest = c2pa_test::read_text_file(manifest_path);
+    auto certs = c2pa_test::read_text_file(certs_path);
+    auto p_key = c2pa_test::read_text_file(current_dir / "../tests/fixtures/es256_private.key");
+
+    // create a signer
+    c2pa::Signer signer = c2pa::Signer("Es256", certs, p_key, "http://timestamp.digicert.com");
+
+    // Create a Context and pass it to the Builder
+    auto context = c2pa::Context::create();
+    auto builder = c2pa::Builder(context, manifest);
+
+    auto placeholder = builder.data_hashed_placeholder(signer.reserve_size(), "image/jpeg");
+
+    std::string data_hash = R"({
+      "exclusions": [
+        {
+          "start": 20,
+          "length": 45884
+        }
+      ],
+      "name": "jumbf manifest",
+      "alg": "sha256",
+      "hash": "gWZNEOMHQNiULfA/tO5HD2awOwYMA3tnfUPApIr9csk=",
+      "pad": " "
+    })";
+    std::vector<unsigned char> manifest_data;
+    ASSERT_NO_THROW(manifest_data = builder.sign_data_hashed_embeddable(signer, data_hash, "image/jpeg"));
+}
+
+TEST_F(BuilderTest, SignDataHashedEmbeddedWithAsset)
 {
     fs::path current_dir = fs::path(__FILE__).parent_path();
 
@@ -1416,7 +1822,56 @@ TEST(Builder, SignDataHashedEmbeddedWithAsset)
     ASSERT_TRUE(embeddable_data.size() > manifest_data.size());
 }
 
-TEST(Builder, SignWithInvalidStream)
+TEST_F(BuilderTest, SignDataHashedEmbeddedWithAssetUsingContext)
+{
+    fs::path current_dir = fs::path(__FILE__).parent_path();
+
+    // Construct the paths relative to the current directory
+    fs::path manifest_path = current_dir / "../tests/fixtures/training.json";
+    fs::path certs_path = current_dir / "../tests/fixtures/es256_certs.pem";
+    fs::path image_path = current_dir / "../tests/fixtures/A.jpg";
+
+    auto manifest = c2pa_test::read_text_file(manifest_path);
+    auto certs = c2pa_test::read_text_file(certs_path);
+    auto p_key = c2pa_test::read_text_file(current_dir / "../tests/fixtures/es256_private.key");
+
+    // create a signer
+    c2pa::Signer signer = c2pa::Signer("Es256", certs, p_key, "http://timestamp.digicert.com");
+
+    // Create a Context and pass it to the Builder
+    auto context = c2pa::Context::create();
+    auto builder = c2pa::Builder(context, manifest);
+
+    auto placeholder = builder.data_hashed_placeholder(signer.reserve_size(), "image/jpeg");
+
+    std::string data_hash = R"({
+      "exclusions": [
+        {
+          "start": 20,
+          "length": 45884
+        }
+      ],
+      "name": "jumbf manifest",
+      "alg": "sha256",
+      "hash": "",
+      "pad": " "
+    })";
+
+    std::ifstream asset(image_path, std::ios::binary);
+    if (!asset)
+    {
+        FAIL() << "Failed to open file: " << image_path << std::endl;
+    }
+
+    std::vector<unsigned char> manifest_data;
+    ASSERT_NO_THROW(manifest_data = builder.sign_data_hashed_embeddable(signer, data_hash, "application/c2pa", &asset));
+
+    auto embeddable_data = c2pa::Builder::format_embeddable("image/jpeg", manifest_data);
+
+    ASSERT_TRUE(embeddable_data.size() > manifest_data.size());
+}
+
+TEST_F(BuilderTest, SignWithInvalidStream)
 {
     fs::path current_dir = fs::path(__FILE__).parent_path();
 
@@ -1442,7 +1897,7 @@ TEST(Builder, SignWithInvalidStream)
     EXPECT_THROW(builder.sign("image/jpeg", empty_stream, dest, signer), c2pa::C2paException);
 }
 
-TEST(Builder, SignWithoutTimestamping)
+TEST_F(BuilderTest, SignWithoutTimestamping)
 {
     fs::path current_dir = fs::path(__FILE__).parent_path();
 
@@ -1496,22 +1951,15 @@ TEST(Builder, SignWithoutTimestamping)
     ASSERT_FALSE(active_manifest["signature_info"].contains("time"));
 }
 
-TEST(Builder, ReadIngredientFile)
+TEST_F(BuilderTest, ReadIngredientFile)
 {
     fs::path current_dir = fs::path(__FILE__).parent_path();
 
     // Construct the path to the test fixture
     fs::path source_path = current_dir / "../tests/fixtures/A.jpg";
 
-    // Use target/tmp like other tests
-    fs::path temp_dir = "target/tmp";
-
-    // Remove and recreate the target/tmp folder before using it
-    // This is technically a clean-up in-between tests
-    if (fs::exists(temp_dir)) {
-        fs::remove_all(temp_dir);
-    }
-    fs::create_directories(temp_dir);
+    // Get temp directory for ingredient data
+    fs::path temp_dir = get_temp_dir("read_ingredient_a");
 
     // Test that the function can read ingredient file successfully
     std::string result;
@@ -1544,7 +1992,7 @@ TEST(Builder, ReadIngredientFile)
     ASSERT_TRUE(result.find("\"componentOf\"") != std::string::npos);
 }
 
-TEST(Builder, ReadIngredientFileWhoHasAManifestStore)
+TEST_F(BuilderTest, ReadIngredientFileWhoHasAManifestStore)
 {
     fs::path current_dir = fs::path(__FILE__).parent_path();
 
@@ -1552,15 +2000,8 @@ TEST(Builder, ReadIngredientFileWhoHasAManifestStore)
     // C has a manifest store attached
     fs::path source_path = current_dir / "../tests/fixtures/C.jpg";
 
-    // Use target/tmp like other tests
-    fs::path temp_dir = "target/tmp";
-
-    // Remove and recreate the target/tmp folder before using it
-    // This is technically a clean-up in-between tests
-    if (fs::exists(temp_dir)) {
-        fs::remove_all(temp_dir);
-    }
-    fs::create_directories(temp_dir);
+    // Get temp directory for ingredient data
+    fs::path temp_dir = get_temp_dir("read_ingredient_c");
 
     // Test that the function can read ingredient file successfully
     std::string result;
@@ -1609,7 +2050,7 @@ TEST(Builder, ReadIngredientFileWhoHasAManifestStore)
     ASSERT_TRUE(result.find("\"application/c2pa\"") != std::string::npos);
 }
 
-TEST(Builder, AddIngredientAsResourceToBuilder)
+TEST_F(BuilderTest, AddIngredientAsResourceToBuilder)
 {
     fs::path current_dir = fs::path(__FILE__).parent_path();
     fs::path manifest_path = current_dir / "../tests/fixtures/training.json";
@@ -1618,14 +2059,7 @@ TEST(Builder, AddIngredientAsResourceToBuilder)
     fs::path ingredient_source_path = current_dir / "../tests/fixtures/A.jpg";
     std::string ingredient_source_path_str = ingredient_source_path.string();
 
-    fs::path temp_dir = current_dir / "../build/ingredient_as_resource_temp_dir";
-
-    // Remove and recreate the build/ingredient_as_resource_temp_dir folder before using it
-    // This is technically a clean-up in-between tests
-    if (fs::exists(temp_dir)) {
-        fs::remove_all(temp_dir);
-    }
-    fs::create_directories(temp_dir);
+    fs::path temp_dir = get_temp_dir("ingredient_as_resource");
 
     // Get the needed JSON for the ingredient from the ingredient file using `read_ingredient_file`
     std::string result;
@@ -1659,14 +2093,14 @@ TEST(Builder, AddIngredientAsResourceToBuilder)
 
     std::vector<unsigned char> manifest_data;
     fs::path signed_image_path = current_dir / "../tests/fixtures/A.jpg";
-    fs::path output_path = current_dir / "../build/examples/signed_with_ingredient_and_resource.jpg";
+    fs::path output_path = get_temp_path("signed_with_ingredient_and_resource_1.jpg");
     manifest_data = builder.sign(signed_image_path, output_path, signer);
 
     auto reader = c2pa::Reader(output_path);
     ASSERT_NO_THROW(reader.json());
 }
 
-TEST(Builder, LinkIngredientsAndSign)
+TEST_F(BuilderTest, LinkIngredientsAndSign)
 {
     fs::path current_dir = fs::path(__FILE__).parent_path();
     fs::path manifest_path = current_dir / "../tests/fixtures/training.json";
@@ -1675,14 +2109,7 @@ TEST(Builder, LinkIngredientsAndSign)
     fs::path ingredient_source_path = current_dir / "../tests/fixtures/A.jpg";
     std::string ingredient_source_path_str = ingredient_source_path.string();
 
-    fs::path temp_dir = current_dir / "../build/ingredient_linked_resource_temp_dir";
-
-    // Remove and recreate the build/ingredient_as_resource_temp_dir folder before using it
-    // This is technically a clean-up in-between tests
-    if (fs::exists(temp_dir)) {
-        fs::remove_all(temp_dir);
-    }
-    fs::create_directories(temp_dir);
+    fs::path temp_dir = get_temp_dir("ingredient_linked_resource");
 
     // Create the builder using a manifest JSON
     auto manifest = c2pa_test::read_text_file(manifest_path);
@@ -1725,7 +2152,7 @@ TEST(Builder, LinkIngredientsAndSign)
     c2pa::Signer signer = c2pa::Signer("Es256", certs, p_key, "http://timestamp.digicert.com");
 
     fs::path signed_image_path = current_dir / "../tests/fixtures/A.jpg";
-    fs::path output_path = current_dir / "../build/examples/signed_with_ingredient_and_resource.jpg";
+    fs::path output_path = get_temp_path("signed_with_ingredient_and_resource_2.jpg");
 
     std::vector<unsigned char> manifest_data;
     manifest_data = builder.sign(signed_image_path, output_path, signer);
@@ -1792,7 +2219,129 @@ TEST(Builder, LinkIngredientsAndSign)
     ASSERT_EQ(created_action["parameters"]["ingredients"][0]["url"], "self#jumbf=c2pa.assertions/c2pa.ingredient.v3");
 }
 
-TEST(Builder, AddIngredientToBuilderUsingBasePath)
+TEST_F(BuilderTest, LinkIngredientsAndSignUsingContext)
+{
+    fs::path current_dir = fs::path(__FILE__).parent_path();
+    fs::path manifest_path = current_dir / "../tests/fixtures/training.json";
+
+    // Construct the path to the test fixture
+    fs::path ingredient_source_path = current_dir / "../tests/fixtures/A.jpg";
+    std::string ingredient_source_path_str = ingredient_source_path.string();
+
+    fs::path temp_dir = get_temp_dir("ingredient_linked_resource_context");
+
+    // Create the builder using a manifest JSON
+    auto manifest = c2pa_test::read_text_file(manifest_path);
+
+    // Parse the manifest and modify it
+    json manifest_json = json::parse(manifest);
+
+    // Find the c2pa.actions assertion and add ingredientIds to c2pa.created action
+    // The values in ingredientIds are going to be used to link ingredients to actions
+    // Those values should be valid UUIDs
+    for (auto& assertion : manifest_json["assertions"]) {
+        if (assertion["label"] == "c2pa.actions") {
+            for (auto& action : assertion["data"]["actions"]) {
+                if (action["action"] == "c2pa.created") {
+                    action["parameters"]["ingredientIds"] = json::array({"test:iid:939a4c48-0dff-44ec-8f95-61f52b11618f"});
+                    break;
+                }
+            }
+            break;
+        }
+    }
+
+    // Create a Context and pass it to the Builder
+    auto context = c2pa::Context::create();
+    auto builder = c2pa::Builder(context, manifest_json.dump());
+
+    // add an ingredient
+    // instance_id, if found in an action's ingredientIds array,
+    // will be used to link the ingredient to the action
+    json ingredient_obj = {
+        {"title", "Test Ingredient"},
+        {"relationship", "parentOf"},
+        {"instance_id", "test:iid:939a4c48-0dff-44ec-8f95-61f52b11618f"}
+    };
+    string ingredient_json = ingredient_obj.dump();
+    builder.add_ingredient(ingredient_json, ingredient_source_path);
+
+    // Create a signer
+    fs::path certs_path = current_dir / "../tests/fixtures/es256_certs.pem";
+    auto certs = c2pa_test::read_text_file(certs_path);
+    auto p_key = c2pa_test::read_text_file(current_dir / "../tests/fixtures/es256_private.key");
+    c2pa::Signer signer = c2pa::Signer("Es256", certs, p_key, "http://timestamp.digicert.com");
+
+    fs::path signed_image_path = current_dir / "../tests/fixtures/A.jpg";
+    fs::path output_path = get_temp_path("signed_with_ingredient_and_resource_context.jpg");
+
+    std::vector<unsigned char> manifest_data;
+    manifest_data = builder.sign(signed_image_path, output_path, signer);
+
+    // Read to verify (also using context)
+    auto reader = c2pa::Reader(context, output_path);
+    string json_result;
+    ASSERT_NO_THROW(json_result = reader.json());
+
+    // Parse the JSON result for validation
+    json result_json = json::parse(json_result);
+
+    // Get the active manifest
+    ASSERT_TRUE(result_json.contains("active_manifest"));
+    ASSERT_TRUE(result_json.contains("manifests"));
+    string active_manifest_label = result_json["active_manifest"];
+    ASSERT_TRUE(result_json["manifests"].contains(active_manifest_label));
+    json active_manifest = result_json["manifests"][active_manifest_label];
+
+    // Verify ingredients array has exactly one ingredient with label "c2pa.ingredient.v3"
+    ASSERT_TRUE(active_manifest.contains("ingredients"));
+    ASSERT_TRUE(active_manifest["ingredients"].is_array());
+    ASSERT_EQ(active_manifest["ingredients"].size(), 1);
+    ASSERT_TRUE(active_manifest["ingredients"][0].contains("label"));
+    ASSERT_EQ(active_manifest["ingredients"][0]["label"], "c2pa.ingredient.v3");
+
+    // Find the c2pa.actions assertion
+    ASSERT_TRUE(active_manifest.contains("assertions"));
+    ASSERT_TRUE(active_manifest["assertions"].is_array());
+
+    json actions_assertion;
+    bool found_actions = false;
+    for (const auto& assertion : active_manifest["assertions"]) {
+        if (assertion.contains("label") && assertion["label"] == "c2pa.actions.v2") {
+            actions_assertion = assertion;
+            found_actions = true;
+            break;
+        }
+    }
+    ASSERT_TRUE(found_actions);
+
+    // Find the c2pa.created action
+    ASSERT_TRUE(actions_assertion.contains("data"));
+    ASSERT_TRUE(actions_assertion["data"].contains("actions"));
+    ASSERT_TRUE(actions_assertion["data"]["actions"].is_array());
+
+    json created_action;
+    bool found_created = false;
+    for (const auto& action : actions_assertion["data"]["actions"]) {
+        if (action.contains("action") && action["action"] == "c2pa.created") {
+            created_action = action;
+            found_created = true;
+            break;
+        }
+    }
+    ASSERT_TRUE(found_created);
+
+    // Verify the c2pa.created action has an ingredients array with exactly one object
+    // that has url: "self#jumbf=c2pa.assertions/c2pa.ingredient.v3"
+    ASSERT_TRUE(created_action.contains("parameters"));
+    ASSERT_TRUE(created_action["parameters"].contains("ingredients"));
+    ASSERT_TRUE(created_action["parameters"]["ingredients"].is_array());
+    ASSERT_EQ(created_action["parameters"]["ingredients"].size(), 1);
+    ASSERT_TRUE(created_action["parameters"]["ingredients"][0].contains("url"));
+    ASSERT_EQ(created_action["parameters"]["ingredients"][0]["url"], "self#jumbf=c2pa.assertions/c2pa.ingredient.v3");
+}
+
+TEST_F(BuilderTest, AddIngredientToBuilderUsingBasePath)
 {
     fs::path current_dir = fs::path(__FILE__).parent_path();
     fs::path manifest_path = current_dir / "../tests/fixtures/training.json";
@@ -1802,14 +2351,7 @@ TEST(Builder, AddIngredientToBuilderUsingBasePath)
     std::string ingredient_source_path_str = ingredient_source_path.string();
 
     // Use temp dir for ingredient data (data dir)
-    fs::path temp_dir = current_dir / "../build/base_ingredient_as_resource_temp_dir";
-
-    // Remove and recreate the temp data dir folder before using it
-    // This is technically a clean-up in-between tests
-    if (fs::exists(temp_dir)) {
-        fs::remove_all(temp_dir);
-    }
-    fs::create_directories(temp_dir);
+    fs::path temp_dir = get_temp_dir("base_ingredient_as_resource");
 
     // Get the needed JSON for the ingredient
     std::string result;
@@ -1848,17 +2390,17 @@ TEST(Builder, AddIngredientToBuilderUsingBasePath)
 
     std::vector<unsigned char> manifest_data;
     fs::path signed_image_path = current_dir / "../tests/fixtures/A.jpg";
-    fs::path output_path = current_dir / "../build/examples/signed_with_ingredient_and_resource.jpg";
+    fs::path output_path = get_temp_path("signed_with_ingredient_and_resource_3.jpg");
     ASSERT_NO_THROW(manifest_data = builder.sign(signed_image_path, output_path, signer));
 
     auto reader = c2pa::Reader(output_path);
     ASSERT_NO_THROW(reader.json());
 }
 
-TEST(Builder, AddIngredientToBuilderUsingBasePathPlacedActionThreadLocalSettings)
+TEST_F(BuilderTest, AddIngredientToBuilderUsingBasePathPlacedActionThreadLocalSettings)
 {
     // Run in separate thread for complete test isolation (thread-local settings won't leak)
-    std::thread test_thread([]() {
+    std::thread test_thread([this]() {
         fs::path current_dir = fs::path(__FILE__).parent_path();
 
         // Construct the path to the test fixture
@@ -1866,17 +2408,20 @@ TEST(Builder, AddIngredientToBuilderUsingBasePathPlacedActionThreadLocalSettings
         std::string ingredient_source_path_str = ingredient_source_path.string();
 
         // Use temp dir for ingredient data
-        fs::path temp_dir = current_dir / "../build/ingredient_placed_as_resource_temp_dir";
-
-        // set settings to not auto-add a placed action (thread-local)
-        c2pa::load_settings("{\"builder\": { \"actions\": {\"auto_placed_action\": {\"enabled\": false}}}}", "json");
+        fs::path build_dir = current_dir.parent_path() / "build";
+        if (!fs::exists(build_dir)) {
+            fs::create_directories(build_dir);
+        }
+        fs::path temp_dir = build_dir / "builder-ingredient_placed_as_resource";
 
         // Remove and recreate the temp data dir folder before using it
-        // This is technically a clean-up in-between tests
         if (fs::exists(temp_dir)) {
             fs::remove_all(temp_dir);
         }
         fs::create_directories(temp_dir);
+
+        // set settings to not auto-add a placed action (thread-local)
+        c2pa::load_settings("{\"builder\": { \"actions\": {\"auto_placed_action\": {\"enabled\": false}}}}", "json");
 
         // Get the needed JSON for the ingredient
         std::string result;
@@ -1942,11 +2487,18 @@ TEST(Builder, AddIngredientToBuilderUsingBasePathPlacedActionThreadLocalSettings
 
         std::vector<unsigned char> manifest_data;
         fs::path signed_image_path = current_dir / "../tests/fixtures/A.jpg";
-        fs::path output_path = current_dir / "../build/examples/signed_with_ingredient_and_resource.jpg";
+        fs::path output_path = get_temp_path("signed_with_ingredient_and_resource_4.jpg");
         ASSERT_NO_THROW(manifest_data = builder.sign(signed_image_path, output_path, signer));
 
         auto reader = c2pa::Reader(output_path);
         ASSERT_NO_THROW(reader.json());
+
+        // Cleanup temp dir if needed
+        if (cleanup_temp_files) {
+            if (fs::exists(temp_dir)) {
+                fs::remove_all(temp_dir);
+            }
+        }
 
         // No need to reset settings - thread-local settings destroyed with thread
     });
@@ -1955,7 +2507,7 @@ TEST(Builder, AddIngredientToBuilderUsingBasePathPlacedActionThreadLocalSettings
     test_thread.join();
 }
 
-TEST(Builder, AddIngredientToBuilderUsingBasePathWithManifestContainingPlacedAction)
+TEST_F(BuilderTest, AddIngredientToBuilderUsingBasePathWithManifestContainingPlacedAction)
 {
     fs::path current_dir = fs::path(__FILE__).parent_path();
 
@@ -1964,13 +2516,7 @@ TEST(Builder, AddIngredientToBuilderUsingBasePathWithManifestContainingPlacedAct
     std::string ingredient_source_path_str = ingredient_source_path.string();
 
     // Use temp dir for ingredient data
-    fs::path temp_dir = current_dir / "../build/ingredient_placed_context_temp_dir";
-
-    // Remove and recreate the temp data dir folder before using it
-    if (fs::exists(temp_dir)) {
-        fs::remove_all(temp_dir);
-    }
-    fs::create_directories(temp_dir);
+    fs::path temp_dir = get_temp_dir("ingredient_placed_context");
 
     // Create context with auto_placed_action disabled via JSON settings
     auto context = c2pa::Context::from_json("{\"builder\": { \"actions\": {\"auto_placed_action\": {\"enabled\": false}}}}");
@@ -2038,7 +2584,7 @@ TEST(Builder, AddIngredientToBuilderUsingBasePathWithManifestContainingPlacedAct
     // Sign the image
     std::vector<unsigned char> manifest_data;
     fs::path signed_image_path = current_dir / "../tests/fixtures/A.jpg";
-    fs::path output_path = current_dir / "../build/examples/signed_with_ingredient_context.jpg";
+    fs::path output_path = get_temp_path("signed_with_ingredient_context.jpg");
     ASSERT_NO_THROW(manifest_data = builder.sign(signed_image_path, output_path, signer));
 
     // Read and verify
@@ -2051,7 +2597,7 @@ TEST(Builder, AddIngredientToBuilderUsingBasePathWithManifestContainingPlacedAct
     ASSERT_TRUE(reader_json.find(instance_id) != std::string::npos);
 }
 
-TEST(Builder, AddIngredientWithProvenanceDataToBuilderUsingBasePath)
+TEST_F(BuilderTest, AddIngredientWithProvenanceDataToBuilderUsingBasePath)
 {
     fs::path current_dir = fs::path(__FILE__).parent_path();
     fs::path manifest_path = current_dir / "../tests/fixtures/training.json";
@@ -2061,14 +2607,7 @@ TEST(Builder, AddIngredientWithProvenanceDataToBuilderUsingBasePath)
     std::string ingredient_source_path_str = ingredient_source_path.string();
 
     // Use temp data dir
-    fs::path temp_dir = current_dir / "../build/ingredient_with_prevenance_as_resource_temp_dir";
-
-    // Remove and recreate the temp data dir folder before using it
-    // This is technically a clean-up in-between tests
-    if (fs::exists(temp_dir)) {
-        fs::remove_all(temp_dir);
-    }
-    fs::create_directories(temp_dir);
+    fs::path temp_dir = get_temp_dir("ingredient_with_provenance_as_resource");
 
     // Get the needed JSON for the ingredient
     std::string result;
@@ -2107,14 +2646,14 @@ TEST(Builder, AddIngredientWithProvenanceDataToBuilderUsingBasePath)
 
     std::vector<unsigned char> manifest_data;
     fs::path signed_image_path = current_dir / "../tests/fixtures/A.jpg";
-    fs::path output_path = current_dir / "../build/examples/signed_with_ingredient_and_resource.jpg";
+    fs::path output_path = get_temp_path("signed_with_ingredient_and_resource_5.jpg");
     ASSERT_NO_THROW(manifest_data = builder.sign(signed_image_path, output_path, signer));
 
     auto reader = c2pa::Reader(output_path);
     ASSERT_NO_THROW(reader.json());
 }
 
-TEST(Builder, MultipleBuildersDifferentThumbnailSettingsInterleaved)
+TEST_F(BuilderTest, MultipleBuildersDifferentThumbnailSettingsInterleaved)
 {
     fs::path current_dir = fs::path(__FILE__).parent_path();
 
@@ -2130,9 +2669,6 @@ TEST(Builder, MultipleBuildersDifferentThumbnailSettingsInterleaved)
 
     // Create a signer
     c2pa::Signer signer = c2pa::Signer("Es256", certs, p_key, "http://timestamp.digicert.com");
-
-    std::filesystem::remove(output_path_no_thumbnail.c_str());
-    std::filesystem::remove(output_path_with_thumbnails.c_str());
 
     // Create one context with specific settings via JSON, by loading the JSON file with the settings
     fs::path settings_path = current_dir / "../tests/fixtures/settings/test_settings_no_thumbnail.json";
@@ -2184,7 +2720,7 @@ TEST(Builder, MultipleBuildersDifferentThumbnailSettingsInterleaved)
     EXPECT_TRUE(parsed_with_thumbnail["manifests"][active_manifest_value_no_context].contains("thumbnail"));
 };
 
-TEST(Builder, MultipleBuildersDifferentThumbnailSettingsInterleaved2)
+TEST_F(BuilderTest, MultipleBuildersDifferentThumbnailSettingsInterleaved2)
 {
     fs::path current_dir = fs::path(__FILE__).parent_path();
 
@@ -2200,9 +2736,6 @@ TEST(Builder, MultipleBuildersDifferentThumbnailSettingsInterleaved2)
 
     // Create a signer
     c2pa::Signer signer = c2pa::Signer("Es256", certs, p_key, "http://timestamp.digicert.com");
-
-    std::filesystem::remove(output_path_no_thumbnail.c_str());
-    std::filesystem::remove(output_path_with_thumbnails.c_str());
 
     // Create one context with specific settings via JSON, by loading the JSON file with the settings
     fs::path settings_path = current_dir / "../tests/fixtures/settings/test_settings_no_thumbnail.json";
@@ -2254,7 +2787,7 @@ TEST(Builder, MultipleBuildersDifferentThumbnailSettingsInterleaved2)
     EXPECT_TRUE(parsed_with_thumbnail["manifests"][active_manifest_value_no_context].contains("thumbnail"));
 };
 
-TEST(Builder, TrustHandling)
+TEST_F(BuilderTest, TrustHandling)
 {
     fs::path current_dir = fs::path(__FILE__).parent_path();
 
@@ -2262,15 +2795,13 @@ TEST(Builder, TrustHandling)
     fs::path manifest_path = current_dir / "../tests/fixtures/training.json";
     fs::path certs_path = current_dir / "../tests/fixtures/es256_certs.pem";
     fs::path signed_image_path = current_dir / "../tests/fixtures/A.jpg";
-    fs::path output_path = current_dir / "../build/examples/trust_handling_test.jpg";
+    fs::path output_path = get_temp_path("trust_handling_test.jpg");
     auto manifest = c2pa_test::read_text_file(manifest_path);
     auto certs = c2pa_test::read_text_file(certs_path);
     auto p_key = c2pa_test::read_text_file(current_dir / "../tests/fixtures/es256_private.key");
 
     // Create our very own signer
     c2pa::Signer signer = c2pa::Signer("Es256", certs, p_key, "http://timestamp.digicert.com");
-
-    std::filesystem::remove(output_path.c_str());
 
     // Trust is based on a chain of trusted certificates. When signing, we may need to know
     // if the ingredients are trusted at time of signing, so we benefit from having a context
@@ -2340,20 +2871,19 @@ TEST(Builder, TrustHandling)
     ASSERT_TRUE(parsed_manifest_json3["validation_state"] == "Valid");
 };
 
-TEST(Builder, SignWithIStreamAndOStream_RoundTrip)
+TEST_F(BuilderTest, SignWithIStreamAndOStream_RoundTrip)
 {
     fs::path current_dir = fs::path(__FILE__).parent_path();
     fs::path manifest_path = current_dir / "../tests/fixtures/training.json";
     fs::path certs_path = current_dir / "../tests/fixtures/es256_certs.pem";
     fs::path image_path = current_dir / "../tests/fixtures/A.jpg";
-    fs::path output_path = current_dir / "../build/examples/stream_ostream_roundtrip.jpg";
+    fs::path output_path = get_temp_path("stream_ostream_roundtrip.jpg");
 
     auto manifest = c2pa_test::read_text_file(manifest_path);
     auto certs = c2pa_test::read_text_file(certs_path);
     auto p_key = c2pa_test::read_text_file(current_dir / "../tests/fixtures/es256_private.key");
     c2pa::Signer signer = c2pa::Signer("Es256", certs, p_key, "http://timestamp.digicert.com");
 
-    std::filesystem::remove(output_path);
     std::filesystem::create_directories(output_path.parent_path());
 
     auto builder = c2pa::Builder(manifest);
@@ -2377,7 +2907,7 @@ TEST(Builder, SignWithIStreamAndOStream_RoundTrip)
     ASSERT_TRUE(json_result.find("cawg.training-mining") != std::string::npos);
 }
 
-TEST(Builder, SignWithIStreamAndIOStream_RoundTrip)
+TEST_F(BuilderTest, SignWithIStreamAndIOStream_RoundTrip)
 {
     fs::path current_dir = fs::path(__FILE__).parent_path();
     fs::path manifest_path = current_dir / "../tests/fixtures/training.json";
@@ -2411,7 +2941,7 @@ TEST(Builder, SignWithIStreamAndIOStream_RoundTrip)
     ASSERT_TRUE(json_result.find("cawg.training-mining") != std::string::npos);
 }
 
-TEST(Builder, ArchiveRoundTrip)
+TEST_F(BuilderTest, ArchiveRoundTrip)
 {
     auto manifest = c2pa_test::read_text_file(c2pa_test::get_fixture_path("training.json"));
     auto context = c2pa::Context::create();
@@ -2442,7 +2972,7 @@ TEST(Builder, ArchiveRoundTrip)
     EXPECT_GT(dest.tellg(), 0);
 }
 
-TEST(Builder, ArchiveRoundTripSettingsBehavior)
+TEST_F(BuilderTest, ArchiveRoundTripSettingsBehavior)
 {
     auto manifest = c2pa_test::read_text_file(c2pa_test::get_fixture_path("training.json"));
 
@@ -2498,7 +3028,7 @@ TEST(Builder, ArchiveRoundTripSettingsBehavior)
         << "Archive round-trip (default context on Builder) should generate thumbnail with default settings";
 }
 
-TEST(Builder, ArchiveRoundTripSettingsBehaviorRestoredCOntext)
+TEST_F(BuilderTest, ArchiveRoundTripSettingsBehaviorRestoredCOntext)
 {
     auto manifest = c2pa_test::read_text_file(c2pa_test::get_fixture_path("training.json"));
 
@@ -2554,10 +3084,7 @@ TEST(Builder, ArchiveRoundTripSettingsBehaviorRestoredCOntext)
         << "Archive round-trip (default context on Builder) should generate thumbnail with default settings";
 }
 
-
-// Test that demonstrates loading an archive with a custom context
-// This verifies the new load_archive() method preserves context settings
-TEST(Builder, LoadArchiveWithContext)
+TEST_F(BuilderTest, LoadArchiveWithContext)
 {
     auto manifest = c2pa_test::read_text_file(c2pa_test::get_fixture_path("training.json"));
 
@@ -2609,7 +3136,7 @@ TEST(Builder, LoadArchiveWithContext)
 }
 
 // Test adding multiple builder archives that got signed as assets, back as ingredients
-TEST(Builder, MultipleArchivesAsIngredients)
+TEST_F(BuilderTest, MultipleArchivesAsIngredients)
 {
     auto manifest = c2pa_test::read_text_file(c2pa_test::get_fixture_path("training.json"));
     auto signer = c2pa_test::create_test_signer();
@@ -2726,9 +3253,319 @@ TEST(Builder, MultipleArchivesAsIngredients)
         << "Third ingredient should have componentOf relationship";
 }
 
-// Test adding multiple builder archives as ingredients
-// This approach uses verify_after_reading=false to skip signature validation
-TEST(Builder, MultipleArchivesAsIngredientsDirectly)
+// Test add_ingredient_from_binary_archive with stream overload
+TEST_F(BuilderTest, AddIngredientFromArchiveStream)
+{
+    auto manifest = c2pa_test::read_text_file(c2pa_test::get_fixture_path("training.json"));
+
+    // Create a builder with an ingredient and export to archive
+    auto builder1 = c2pa::Builder(manifest);
+    std::string prep_json = R"({"title": "Prep Ingredient"})";
+    builder1.add_ingredient(prep_json, c2pa_test::get_fixture_path("C.jpg"));
+
+    std::stringstream archive_stream(std::ios::in | std::ios::out | std::ios::binary);
+    EXPECT_NO_THROW({
+        builder1.to_archive(archive_stream);
+    });
+
+    // Set verify_after_reading to false since archives have placeholder signatures
+    c2pa::load_settings(R"({"verify": {"verify_after_reading": false}})", "json");
+
+    // Create final builder and add archive as ingredient using new API
+    auto final_builder = c2pa::Builder(manifest);
+    archive_stream.seekg(0);
+    std::string ingredient_json = R"({"title": "Archive Ingredient", "relationship": "parentOf"})";
+
+    EXPECT_NO_THROW({
+        final_builder.add_ingredient_from_binary_archive(ingredient_json, archive_stream);
+    });
+
+    // Reset settings
+    c2pa::load_settings(R"({"verify": {"verify_after_reading": true}})", "json");
+
+    // Sign and verify
+    auto signer = c2pa_test::create_test_signer();
+    std::ifstream source(c2pa_test::get_fixture_path("A.jpg"), std::ios::binary);
+    ASSERT_TRUE(source.is_open());
+    std::stringstream dest_stream(std::ios::in | std::ios::out | std::ios::binary);
+
+    EXPECT_NO_THROW({
+        final_builder.sign("image/jpeg", source, dest_stream, signer);
+    });
+
+    // Verify the ingredient is present
+    dest_stream.seekg(0);
+    auto reader = c2pa::Reader(c2pa::Context::create(), "image/jpeg", dest_stream);
+    auto json_result = json::parse(reader.json());
+
+    EXPECT_TRUE(json_result.contains("active_manifest"));
+    std::string active = json_result["active_manifest"];
+    ASSERT_TRUE(json_result["manifests"][active].contains("ingredients"));
+
+    auto ingredients = json_result["manifests"][active]["ingredients"];
+    EXPECT_EQ(ingredients.size(), 1) << "Should have exactly 1 ingredient";
+    EXPECT_EQ(ingredients[0]["title"], "Archive Ingredient");
+    EXPECT_EQ(ingredients[0]["relationship"], "parentOf");
+}
+
+// Test add_ingredient_from_binary_archive with file overload
+TEST_F(BuilderTest, AddIngredientFromArchiveFile)
+{
+    auto manifest = c2pa_test::read_text_file(c2pa_test::get_fixture_path("training.json"));
+
+    // Create a builder with an ingredient and export to archive file
+    auto builder1 = c2pa::Builder(manifest);
+    std::string prep_json = R"({"title": "Prep Ingredient"})";
+    builder1.add_ingredient(prep_json, c2pa_test::get_fixture_path("sample1.gif"));
+
+    auto archive_path = get_temp_path("test_archive.c2pa");
+    EXPECT_NO_THROW({
+        builder1.to_archive(archive_path);
+    });
+
+    // Set verify_after_reading to false since archives have placeholder signatures
+    c2pa::load_settings(R"({"verify": {"verify_after_reading": false}})", "json");
+
+    // Create final builder and add archive as ingredient using new API
+    auto final_builder = c2pa::Builder(manifest);
+    std::string ingredient_json = R"({"title": "File Archive Ingredient", "relationship": "componentOf"})";
+
+    EXPECT_NO_THROW({
+        final_builder.add_ingredient_from_binary_archive(ingredient_json, archive_path);
+    });
+
+    // Reset settings
+    c2pa::load_settings(R"({"verify": {"verify_after_reading": true}})", "json");
+
+    // Sign and verify
+    auto signer = c2pa_test::create_test_signer();
+    auto source_path = c2pa_test::get_fixture_path("A.jpg");
+    auto dest_path = get_temp_path("test_archive_ingredient_output.jpg");
+
+    EXPECT_NO_THROW({
+        final_builder.sign(source_path, dest_path, signer);
+    });
+
+    // Verify the ingredient is present
+    auto reader = c2pa::Reader(c2pa::Context::create(), dest_path);
+    auto json_result = json::parse(reader.json());
+
+    EXPECT_TRUE(json_result.contains("active_manifest"));
+    std::string active = json_result["active_manifest"];
+    ASSERT_TRUE(json_result["manifests"][active].contains("ingredients"));
+
+    auto ingredients = json_result["manifests"][active]["ingredients"];
+    EXPECT_EQ(ingredients.size(), 1) << "Should have exactly 1 ingredient";
+    EXPECT_EQ(ingredients[0]["title"], "File Archive Ingredient");
+    EXPECT_EQ(ingredients[0]["relationship"], "componentOf");
+}
+
+// Test add_ingredient_from_binary_archive with multiple archives
+TEST_F(BuilderTest, AddMultipleArchivesFromArchive)
+{
+    auto manifest = c2pa_test::read_text_file(c2pa_test::get_fixture_path("training.json"));
+
+    // Create first builder with an ingredient and export to archive
+    auto builder1 = c2pa::Builder(manifest);
+    std::string ingredient1_prep_json = R"({"title": "Prep Ingredient 1"})";
+    builder1.add_ingredient(ingredient1_prep_json, c2pa_test::get_fixture_path("C.jpg"));
+    std::stringstream archive1_stream(std::ios::in | std::ios::out | std::ios::binary);
+    EXPECT_NO_THROW({
+        builder1.to_archive(archive1_stream);
+    });
+
+    // Create second builder with an ingredient and export to archive
+    auto builder2 = c2pa::Builder(manifest);
+    std::string ingredient2_prep_json = R"({"title": "Prep Ingredient 2"})";
+    builder2.add_ingredient(ingredient2_prep_json, c2pa_test::get_fixture_path("A.jpg"));
+    std::stringstream archive2_stream(std::ios::in | std::ios::out | std::ios::binary);
+    EXPECT_NO_THROW({
+        builder2.to_archive(archive2_stream);
+    });
+
+    // Create third builder with an ingredient and export to archive
+    auto builder3 = c2pa::Builder(manifest);
+    std::string ingredient3_prep_json = R"({"title": "Prep Ingredient 3"})";
+    builder3.add_ingredient(ingredient3_prep_json, c2pa_test::get_fixture_path("sample1.gif"));
+    std::stringstream archive3_stream(std::ios::in | std::ios::out | std::ios::binary);
+    EXPECT_NO_THROW({
+        builder3.to_archive(archive3_stream);
+    });
+
+    // Set verify_after_reading to false since archives have placeholder signatures
+    c2pa::load_settings(R"({"verify": {"verify_after_reading": false}})", "json");
+
+    // Create final builder and add all three archives using the new API
+    auto final_builder = c2pa::Builder(manifest);
+
+    archive1_stream.seekg(0);
+    std::string ingredient1_json = R"({"title": "Archive 1 New API", "relationship": "parentOf"})";
+    EXPECT_NO_THROW({
+        final_builder.add_ingredient_from_binary_archive(ingredient1_json, archive1_stream);
+    });
+
+    archive2_stream.seekg(0);
+    std::string ingredient2_json = R"({"title": "Archive 2 New API", "relationship": "componentOf"})";
+    EXPECT_NO_THROW({
+        final_builder.add_ingredient_from_binary_archive(ingredient2_json, archive2_stream);
+    });
+
+    archive3_stream.seekg(0);
+    std::string ingredient3_json = R"({"title": "Archive 3 New API", "relationship": "componentOf"})";
+    EXPECT_NO_THROW({
+        final_builder.add_ingredient_from_binary_archive(ingredient3_json, archive3_stream);
+    });
+
+    // Reset settings
+    c2pa::load_settings(R"({"verify": {"verify_after_reading": true}})", "json");
+
+    // Sign the final builder
+    auto signer = c2pa_test::create_test_signer();
+    std::ifstream final_source(c2pa_test::get_fixture_path("A.jpg"), std::ios::binary);
+    ASSERT_TRUE(final_source.is_open());
+    std::stringstream dest_stream(std::ios::in | std::ios::out | std::ios::binary);
+    EXPECT_NO_THROW({
+        final_builder.sign("image/jpeg", final_source, dest_stream, signer);
+    });
+
+    // Verify all three ingredients are present
+    dest_stream.seekg(0);
+    auto reader = c2pa::Reader(c2pa::Context::create(), "image/jpeg", dest_stream);
+    auto json_result = json::parse(reader.json());
+
+    EXPECT_TRUE(json_result.contains("active_manifest"));
+    std::string active = json_result["active_manifest"];
+    ASSERT_TRUE(json_result["manifests"][active].contains("ingredients"));
+
+    auto ingredients = json_result["manifests"][active]["ingredients"];
+    EXPECT_EQ(ingredients.size(), 3) << "Should have exactly 3 ingredients";
+
+    // Verify ingredient titles and relationships
+    std::map<std::string, std::string> ingredient_relationships;
+    for (const auto& ingredient : ingredients) {
+        EXPECT_TRUE(ingredient.contains("title"));
+        EXPECT_TRUE(ingredient.contains("relationship"));
+        ingredient_relationships[ingredient["title"]] = ingredient["relationship"];
+    }
+
+    EXPECT_EQ(ingredient_relationships["Archive 1 New API"], "parentOf")
+        << "First ingredient should have parentOf relationship";
+    EXPECT_EQ(ingredient_relationships["Archive 2 New API"], "componentOf")
+        << "Second ingredient should have componentOf relationship";
+    EXPECT_EQ(ingredient_relationships["Archive 3 New API"], "componentOf")
+        << "Third ingredient should have componentOf relationship";
+}
+
+// Test add_ingredient_from_binary_archive with invalid archive
+TEST_F(BuilderTest, AddIngredientFromArchiveInvalidStream)
+{
+    auto manifest = c2pa_test::read_text_file(c2pa_test::get_fixture_path("training.json"));
+    auto builder = c2pa::Builder(manifest);
+
+    // Create a stream with invalid (non-archive) content
+    std::stringstream invalid_stream(std::ios::in | std::ios::out | std::ios::binary);
+    invalid_stream << "This is not a valid C2PA archive";
+    invalid_stream.seekg(0);
+
+    std::string ingredient_json = R"({"title": "Invalid Archive"})";
+
+    // Should throw C2paException when trying to add invalid archive
+    EXPECT_THROW({
+        builder.add_ingredient_from_binary_archive(ingredient_json, invalid_stream);
+    }, c2pa::C2paException);
+}
+
+TEST_F(BuilderTest, WithDefinitionUpdatesManifest) {
+    fs::path current_dir = fs::path(__FILE__).parent_path();
+    fs::path manifest_path = current_dir / "fixtures/training.json";
+
+    auto manifest = c2pa_test::read_text_file(manifest_path);
+    auto context = c2pa::Context::create();
+
+    c2pa::Builder builder(context);
+    builder.with_definition(manifest);
+
+    fs::path asset_path = current_dir / "fixtures/A.jpg";
+    fs::path dest_path = get_temp_path("test_with_definition_output.jpg");
+    fs::path cert_path = current_dir / "fixtures/es256_certs.pem";
+    fs::path key_path = current_dir / "fixtures/es256_private.key";
+
+    auto certs = c2pa_test::read_text_file(cert_path);
+    auto private_key = c2pa_test::read_text_file(key_path);
+    c2pa::Signer signer("es256", certs, private_key);
+
+    builder.sign(asset_path, dest_path, signer);
+
+    c2pa::Reader reader(context, dest_path);
+    auto json_result = json::parse(reader.json());
+
+    std::string active = json_result["active_manifest"];
+    auto claim_generator_info = json_result["manifests"][active]["claim_generator_info"];
+
+    // Verify the manifest definition from training.json was applied
+    ASSERT_TRUE(claim_generator_info.is_array());
+    ASSERT_GT(claim_generator_info.size(), 0);
+    EXPECT_EQ(claim_generator_info[0]["name"], "c2pa-c test");
+}
+
+TEST_F(BuilderTest, WithDefinitionChaining) {
+    fs::path current_dir = fs::path(__FILE__).parent_path();
+    fs::path manifest_path = current_dir / "fixtures/training.json";
+
+    auto initial_manifest = R"({
+      "claim_generator_info": [
+        {
+          "name": "initial-value",
+          "version": "0.1"
+        }
+      ]
+    })";
+    auto updated_manifest = c2pa_test::read_text_file(manifest_path);
+    auto context = c2pa::Context::create();
+
+    c2pa::Builder builder(context, initial_manifest);
+    builder.with_definition(updated_manifest);
+
+    // Sign and verify the updated definition was applied
+    fs::path asset_path = current_dir / "fixtures/A.jpg";
+    fs::path dest_path = get_temp_path("test_with_definition_chaining_output.jpg");
+    fs::path cert_path = current_dir / "fixtures/es256_certs.pem";
+    fs::path key_path = current_dir / "fixtures/es256_private.key";
+
+    auto certs = c2pa_test::read_text_file(cert_path);
+    auto private_key = c2pa_test::read_text_file(key_path);
+    c2pa::Signer signer("es256", certs, private_key);
+
+    builder.sign(asset_path, dest_path, signer);
+
+    c2pa::Reader reader(context, dest_path);
+    auto json_result = json::parse(reader.json());
+
+    std::string active = json_result["active_manifest"];
+    auto claim_generator_info = json_result["manifests"][active]["claim_generator_info"];
+
+    // Verify updated definition (training.json) was applied, not initial
+    ASSERT_TRUE(claim_generator_info.is_array());
+    ASSERT_GT(claim_generator_info.size(), 0);
+    EXPECT_EQ(claim_generator_info[0]["name"], "c2pa-c test");
+    EXPECT_NE(claim_generator_info[0]["name"], "initial-value");
+}
+
+TEST_F(BuilderTest, ArchiveToFilePath) {
+    fs::path current_dir = fs::path(__FILE__).parent_path();
+    fs::path manifest_path = current_dir / "fixtures/training.json";
+    fs::path archive_path = get_temp_path("test_archive.c2pa");
+
+    auto manifest = c2pa_test::read_text_file(manifest_path);
+    c2pa::Builder builder(manifest);
+
+    builder.to_archive(archive_path);
+
+    EXPECT_TRUE(fs::exists(archive_path));
+    EXPECT_GT(fs::file_size(archive_path), 0);
+}
+
+TEST_F(BuilderTest, ArchivesAsIngredients)
 {
     auto manifest = c2pa_test::read_text_file(c2pa_test::get_fixture_path("training.json"));
 
@@ -2828,3 +3665,344 @@ TEST(Builder, MultipleArchivesAsIngredientsDirectly)
         << "Third ingredient should have componentOf relationship";
 }
 
+TEST_F(BuilderTest, BuilderArchivesNoRelationshipsKept)
+{
+    auto manifest = c2pa_test::read_text_file(c2pa_test::get_fixture_path("training.json"));
+
+    // First builder: holds parentOf relationship
+    auto builder1 = c2pa::Builder(manifest);
+    std::string ing1_json = R"({"title": "Imported image", "relationship": "parentOf"})";
+    builder1.add_ingredient(ing1_json, c2pa_test::get_fixture_path("sample1.webp"));
+    std::stringstream archive1_stream(std::ios::in | std::ios::out | std::ios::binary);
+    EXPECT_NO_THROW({ builder1.to_archive(archive1_stream); });
+
+    // Second builder: holds a componentOf relationship
+    auto builder2 = c2pa::Builder(manifest);
+    std::string ing2_json = R"({"title": "Ingredient for placed image #1", "relationship": "componentOf"})";
+    builder2.add_ingredient(ing2_json, c2pa_test::get_fixture_path("A.jpg"));
+    std::stringstream archive2_stream(std::ios::in | std::ios::out | std::ios::binary);
+    EXPECT_NO_THROW({ builder2.to_archive(archive2_stream); });
+
+    // Third builder: holds a componentOf relationship
+    auto builder3 = c2pa::Builder(manifest);
+    std::string ing3_json = R"({"title": "Ingredient for placed image #2", "relationship": "componentOf"})";
+    builder3.add_ingredient(ing3_json, c2pa_test::get_fixture_path("sample1.gif"));
+    std::stringstream archive3_stream(std::ios::in | std::ios::out | std::ios::binary);
+    EXPECT_NO_THROW({ builder3.to_archive(archive3_stream); });
+
+    // Need to skip verify_after_read for the temp archives
+    // Merge: combine the three .c2pa archives into a single merged archive (eg. 3 assets become one)
+    c2pa::load_settings(R"({"verify": {"verify_after_reading": false}})", "json");
+    auto merge_builder = c2pa::Builder(manifest);
+    // not setting relationship here will reset them to default componentOf relationship
+    archive1_stream.seekg(0);
+    merge_builder.add_ingredient(R"({})", "application/c2pa", archive1_stream);
+    archive2_stream.seekg(0);
+    merge_builder.add_ingredient(R"({})", "application/c2pa", archive2_stream);
+    archive3_stream.seekg(0);
+    merge_builder.add_ingredient(R"({})", "application/c2pa", archive3_stream);
+    std::stringstream merged_archive_stream(std::ios::in | std::ios::out | std::ios::binary);
+    EXPECT_NO_THROW({ merge_builder.to_archive(merged_archive_stream); });
+    c2pa::load_settings(R"({"verify": {"verify_after_reading": true}})", "json");
+
+    // Export: restore the builder from the merged archive using from_archive.
+    // from_archive() internally disables verify_after_reading for placeholder signatures.
+    // This preserves all 3 original ingredients (unlike add_ingredient which wraps as 1).
+    merged_archive_stream.seekg(0);
+    auto export_builder = c2pa::Builder::from_archive(merged_archive_stream);
+
+    // Sign
+    auto signer = c2pa_test::create_test_signer();
+    std::ifstream final_source(c2pa_test::get_fixture_path("A.jpg"), std::ios::binary);
+    ASSERT_TRUE(final_source.is_open());
+    std::stringstream dest_stream(std::ios::in | std::ios::out | std::ios::binary);
+    std::vector<unsigned char> signed_manifest;
+    EXPECT_NO_THROW({
+        signed_manifest = export_builder.sign("image/jpeg", final_source, dest_stream, signer);
+    });
+
+    // Log the signed manifest for debugging
+    dest_stream.seekg(0);
+    auto reader = c2pa::Reader(c2pa::Context::create(), "image/jpeg", dest_stream);
+    std::string manifest_json = reader.json();
+
+    auto json_result = json::parse(manifest_json);
+    EXPECT_TRUE(json_result.contains("active_manifest"));
+    std::string active = json_result["active_manifest"];
+    ASSERT_TRUE(json_result["manifests"][active].contains("ingredients"));
+
+    auto ingredients = json_result["manifests"][active]["ingredients"];
+    EXPECT_EQ(ingredients.size(), 3u) << "Should have all 3 original ingredients preserved";
+
+    // Verify ingredient titles and relationships are preserved
+    std::map<std::string, std::string> ingredient_relationships;
+    for (const auto& ingredient : ingredients) {
+        EXPECT_TRUE(ingredient.contains("title"));
+        EXPECT_TRUE(ingredient.contains("relationship"));
+        ingredient_relationships[ingredient["title"]] = ingredient["relationship"];
+    }
+
+    EXPECT_EQ(ingredient_relationships["Imported image"], "componentOf")
+        << "Imported image should have parentOf relationship";
+    EXPECT_EQ(ingredient_relationships["Ingredient for placed image #1"], "componentOf")
+        << "Placed ingredient #1 should have componentOf relationship";
+    EXPECT_EQ(ingredient_relationships["Ingredient for placed image #2"], "componentOf")
+        << "Placed ingredient #2 should have componentOf relationship";
+}
+
+TEST_F(BuilderTest, BuilderArchivesVariation1)
+{
+    auto manifest = c2pa_test::read_text_file(c2pa_test::get_fixture_path("training.json"));
+
+    // Step 1 (Import): parent relationship
+    auto builder1 = c2pa::Builder(manifest);
+    builder1.add_ingredient(
+        R"({"title": "Imported image", "relationship": "parentOf"})",
+        c2pa_test::get_fixture_path("sample1.webp"));
+    std::stringstream archive1_stream(std::ios::in | std::ios::out | std::ios::binary);
+    EXPECT_NO_THROW({ builder1.to_archive(archive1_stream); });
+
+    // Step 2 (Place): component relationship
+    auto builder2 = c2pa::Builder(manifest);
+    builder2.add_ingredient(
+        R"({"title": "Ingredient for placed image #1", "relationship": "componentOf"})",
+        c2pa_test::get_fixture_path("A.jpg"));
+    std::stringstream archive2_stream(std::ios::in | std::ios::out | std::ios::binary);
+    EXPECT_NO_THROW({ builder2.to_archive(archive2_stream); });
+
+    // Step 3: component relationship
+    auto builder3 = c2pa::Builder(manifest);
+    builder3.add_ingredient(
+        R"({"title": "Ingredient for placed image #2", "relationship": "componentOf"})",
+        c2pa_test::get_fixture_path("sample1.gif"));
+    std::stringstream archive3_stream(std::ios::in | std::ios::out | std::ios::binary);
+    EXPECT_NO_THROW({ builder3.to_archive(archive3_stream); });
+
+    // Merge: Use from_archive for the parent archive to preserve parentOf.
+    archive1_stream.seekg(0);
+    auto merge_builder = c2pa::Builder::from_archive(archive1_stream);
+
+    // Add the remaining component archives. Their original relationship is componentOf.
+    c2pa::load_settings(R"({"verify": {"verify_after_reading": false}})", "json");
+    archive2_stream.seekg(0);
+    merge_builder.add_ingredient(R"({})", "application/c2pa", archive2_stream);
+    archive3_stream.seekg(0);
+    merge_builder.add_ingredient(R"({})", "application/c2pa", archive3_stream);
+    c2pa::load_settings(R"({"verify": {"verify_after_reading": true}})", "json");
+
+    // Save merged archive with all 3 ingredients (parentOf + 2x componentOf)
+    std::stringstream merged_archive_stream(std::ios::in | std::ios::out | std::ios::binary);
+    EXPECT_NO_THROW({ merge_builder.to_archive(merged_archive_stream); });
+
+    // Export: from_archive restores the builder with all 3 ingredients and relationships
+    merged_archive_stream.seekg(0);
+    auto export_builder = c2pa::Builder::from_archive(merged_archive_stream);
+
+    // Sign
+    auto signer = c2pa_test::create_test_signer();
+    std::ifstream final_source(c2pa_test::get_fixture_path("A.jpg"), std::ios::binary);
+    ASSERT_TRUE(final_source.is_open());
+    std::stringstream dest_stream(std::ios::in | std::ios::out | std::ios::binary);
+    EXPECT_NO_THROW({
+        export_builder.sign("image/jpeg", final_source, dest_stream, signer);
+    });
+
+    // Read and log the manifest
+    dest_stream.seekg(0);
+    auto reader = c2pa::Reader(c2pa::Context::create(), "image/jpeg", dest_stream);
+    std::string manifest_json = reader.json();
+    std::cout << "\n[MergingBuildersThenSignMergedPreservedRelationships] Signed manifest:\n"
+              << manifest_json << "\n";
+
+    auto json_result = json::parse(manifest_json);
+    EXPECT_TRUE(json_result.contains("active_manifest"));
+    std::string active = json_result["active_manifest"];
+    ASSERT_TRUE(json_result["manifests"][active].contains("ingredients"));
+
+    auto ingredients = json_result["manifests"][active]["ingredients"];
+    EXPECT_EQ(ingredients.size(), 3u) << "Should have all 3 original ingredients";
+
+    // Verify all relationships are preserved: especially parentOf for the imported image
+    std::map<std::string, std::string> ingredient_relationships;
+    for (const auto& ingredient : ingredients) {
+        EXPECT_TRUE(ingredient.contains("title"));
+        EXPECT_TRUE(ingredient.contains("relationship"));
+        ingredient_relationships[ingredient["title"]] = ingredient["relationship"];
+    }
+
+    EXPECT_EQ(ingredient_relationships["Imported image"], "parentOf")
+        << "parentOf must be preserved without explicitly setting it at merge time";
+    EXPECT_EQ(ingredient_relationships["Ingredient for placed image #1"], "componentOf")
+        << "componentOf preserved (matches default)";
+    EXPECT_EQ(ingredient_relationships["Ingredient for placed image #2"], "componentOf")
+        << "componentOf preserved (matches default)";
+}
+
+TEST_F(BuilderTest, BuilderArchivesVariation2)
+{
+    auto manifest = c2pa_test::read_text_file(c2pa_test::get_fixture_path("training.json"));
+
+    // Archive 1: a single builder that already has 3 ingredients (1 parent + 2 components)
+    auto builder1 = c2pa::Builder(manifest);
+    builder1.add_ingredient(
+        R"({"title": "Imported image", "relationship": "parentOf"})",
+        c2pa_test::get_fixture_path("sample1.webp"));
+    builder1.add_ingredient(
+        R"({"title": "Placed image #1", "relationship": "componentOf"})",
+        c2pa_test::get_fixture_path("A.jpg"));
+    builder1.add_ingredient(
+        R"({"title": "Placed image #2", "relationship": "componentOf"})",
+        c2pa_test::get_fixture_path("sample1.gif"));
+    std::stringstream archive1_stream(std::ios::in | std::ios::out | std::ios::binary);
+    EXPECT_NO_THROW({ builder1.to_archive(archive1_stream); });
+
+    // Archive 2: a separate builder with 1 component ingredient
+    auto builder2 = c2pa::Builder(manifest);
+    builder2.add_ingredient(
+        R"({"title": "Other placed element", "relationship": "componentOf"})",
+        c2pa_test::get_fixture_path("C.jpg"));
+    std::stringstream archive2_stream(std::ios::in | std::ios::out | std::ios::binary);
+    EXPECT_NO_THROW({ builder2.to_archive(archive2_stream); });
+
+    // Merge: from_archive on the multi-ingredient archive preserves all 3 ingredients.
+    archive1_stream.seekg(0);
+    auto merge_builder = c2pa::Builder::from_archive(archive1_stream);
+
+    // Add archive2's ingredient (componentOf matches default, so {} is safe)
+    c2pa::load_settings(R"({"verify": {"verify_after_reading": false}})", "json");
+    archive2_stream.seekg(0);
+    merge_builder.add_ingredient(R"({})", "application/c2pa", archive2_stream);
+    c2pa::load_settings(R"({"verify": {"verify_after_reading": true}})", "json");
+
+    // Save merged archive
+    std::stringstream merged_archive_stream(std::ios::in | std::ios::out | std::ios::binary);
+    EXPECT_NO_THROW({ merge_builder.to_archive(merged_archive_stream); });
+
+    // Export via from_archive (preserves all 4 ingredients and relationships)
+    merged_archive_stream.seekg(0);
+    auto export_builder = c2pa::Builder::from_archive(merged_archive_stream);
+
+    // Sign
+    auto signer = c2pa_test::create_test_signer();
+    std::ifstream final_source(c2pa_test::get_fixture_path("A.jpg"), std::ios::binary);
+    ASSERT_TRUE(final_source.is_open());
+    std::stringstream dest_stream(std::ios::in | std::ios::out | std::ios::binary);
+    EXPECT_NO_THROW({
+        export_builder.sign("image/jpeg", final_source, dest_stream, signer);
+    });
+
+    // Read and log the manifest
+    dest_stream.seekg(0);
+    auto reader = c2pa::Reader(c2pa::Context::create(), "image/jpeg", dest_stream);
+    std::string manifest_json = reader.json();
+
+    auto json_result = json::parse(manifest_json);
+    EXPECT_TRUE(json_result.contains("active_manifest"));
+    std::string active = json_result["active_manifest"];
+    ASSERT_TRUE(json_result["manifests"][active].contains("ingredients"));
+
+    auto ingredients = json_result["manifests"][active]["ingredients"];
+    EXPECT_EQ(ingredients.size(), 4u)
+        << "Should have 4 ingredients: 3 from archive1 + 1 from archive2";
+
+    // Verify all relationships are preserved
+    std::map<std::string, std::string> ingredient_relationships;
+    for (const auto& ingredient : ingredients) {
+        EXPECT_TRUE(ingredient.contains("title"));
+        EXPECT_TRUE(ingredient.contains("relationship"));
+        ingredient_relationships[ingredient["title"]] = ingredient["relationship"];
+    }
+
+    EXPECT_EQ(ingredient_relationships["Imported image"], "parentOf")
+        << "parentOf from multi-ingredient archive must be preserved";
+    EXPECT_EQ(ingredient_relationships["Placed image #1"], "componentOf")
+        << "componentOf from multi-ingredient archive preserved";
+    EXPECT_EQ(ingredient_relationships["Placed image #2"], "componentOf")
+        << "componentOf from multi-ingredient archive preserved";
+    EXPECT_EQ(ingredient_relationships["Other placed element"], "componentOf")
+        << "componentOf from single-ingredient archive preserved";
+}
+
+TEST_F(BuilderTest, BuilderArchivesVariation3)
+{
+    auto manifest = c2pa_test::read_text_file(c2pa_test::get_fixture_path("training.json"));
+
+    // First builder: holds parentOf relationship
+    auto builder1 = c2pa::Builder(manifest);
+    std::string ing1_json = R"({"title": "Imported image", "relationship": "parentOf"})";
+    builder1.add_ingredient(ing1_json, c2pa_test::get_fixture_path("sample1.webp"));
+    std::stringstream archive1_stream(std::ios::in | std::ios::out | std::ios::binary);
+    EXPECT_NO_THROW({ builder1.to_archive(archive1_stream); });
+
+    // Second builder: holds a componentOf relationship
+    auto builder2 = c2pa::Builder(manifest);
+    std::string ing2_json = R"({"title": "Ingredient for placed image #1", "relationship": "componentOf"})";
+    builder2.add_ingredient(ing2_json, c2pa_test::get_fixture_path("A.jpg"));
+    std::stringstream archive2_stream(std::ios::in | std::ios::out | std::ios::binary);
+    EXPECT_NO_THROW({ builder2.to_archive(archive2_stream); });
+
+    // Third builder: holds a componentOf relationship
+    auto builder3 = c2pa::Builder(manifest);
+    std::string ing3_json = R"({"title": "Ingredient for placed image #2", "relationship": "componentOf"})";
+    builder3.add_ingredient(ing3_json, c2pa_test::get_fixture_path("sample1.gif"));
+    std::stringstream archive3_stream(std::ios::in | std::ios::out | std::ios::binary);
+    EXPECT_NO_THROW({ builder3.to_archive(archive3_stream); });
+
+    // Need to skip verify_after_read for the temp archives
+    // Merge: combine the three .c2pa archives into a single merged archive (eg. 3 assets become one)
+    c2pa::load_settings(R"({"verify": {"verify_after_reading": false}})", "json");
+    auto merge_builder = c2pa::Builder(manifest);
+    archive1_stream.seekg(0);
+    merge_builder.add_ingredient(R"({"title": "Imported image", "relationship": "parentOf"})", "application/c2pa", archive1_stream);
+    archive2_stream.seekg(0);
+    merge_builder.add_ingredient(R"({"title": "Placed image #1", "relationship": "componentOf"})", "application/c2pa", archive2_stream);
+    archive3_stream.seekg(0);
+    merge_builder.add_ingredient(R"({"title": "Placed image #2", "relationship": "componentOf"})", "application/c2pa", archive3_stream);
+    std::stringstream merged_archive_stream(std::ios::in | std::ios::out | std::ios::binary);
+    EXPECT_NO_THROW({ merge_builder.to_archive(merged_archive_stream); });
+    c2pa::load_settings(R"({"verify": {"verify_after_reading": true}})", "json");
+
+    // Export: restore the builder from the merged archive using from_archive.
+    // from_archive() internally disables verify_after_reading for placeholder signatures.
+    // This preserves all 3 original ingredients (unlike add_ingredient which wraps as 1).
+    merged_archive_stream.seekg(0);
+    auto export_builder = c2pa::Builder::from_archive(merged_archive_stream);
+
+    // Sign
+    auto signer = c2pa_test::create_test_signer();
+    std::ifstream final_source(c2pa_test::get_fixture_path("A.jpg"), std::ios::binary);
+    ASSERT_TRUE(final_source.is_open());
+    std::stringstream dest_stream(std::ios::in | std::ios::out | std::ios::binary);
+    std::vector<unsigned char> signed_manifest;
+    EXPECT_NO_THROW({
+        signed_manifest = export_builder.sign("image/jpeg", final_source, dest_stream, signer);
+    });
+
+    // Log the signed manifest for debugging
+    dest_stream.seekg(0);
+    auto reader = c2pa::Reader(c2pa::Context::create(), "image/jpeg", dest_stream);
+    std::string manifest_json = reader.json();
+
+    auto json_result = json::parse(manifest_json);
+    EXPECT_TRUE(json_result.contains("active_manifest"));
+    std::string active = json_result["active_manifest"];
+    ASSERT_TRUE(json_result["manifests"][active].contains("ingredients"));
+
+    auto ingredients = json_result["manifests"][active]["ingredients"];
+    EXPECT_EQ(ingredients.size(), 3u) << "Should have all 3 original ingredients preserved";
+
+    // Verify ingredient titles and relationships are preserved
+    std::map<std::string, std::string> ingredient_relationships;
+    for (const auto& ingredient : ingredients) {
+        EXPECT_TRUE(ingredient.contains("title"));
+        EXPECT_TRUE(ingredient.contains("relationship"));
+        ingredient_relationships[ingredient["title"]] = ingredient["relationship"];
+    }
+
+    EXPECT_EQ(ingredient_relationships["Imported image"], "parentOf")
+        << "Imported image should have parentOf relationship";
+    EXPECT_EQ(ingredient_relationships["Placed image #1"], "componentOf")
+        << "Placed image #1 should have componentOf relationship";
+    EXPECT_EQ(ingredient_relationships["Placed image #2"], "componentOf")
+        << "Placed image #2 should have componentOf relationship";
+}

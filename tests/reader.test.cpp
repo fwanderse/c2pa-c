@@ -21,6 +21,36 @@
 using nlohmann::json;
 namespace fs = std::filesystem;
 
+// Test fixture for reader tests with automatic cleanup
+class ReaderTest : public ::testing::Test {
+protected:
+    std::vector<fs::path> temp_files;
+    bool cleanup_temp_files = true;  // Set to false to keep temp files for debugging
+
+    // Get path for temp reader test files in build directory
+    fs::path get_temp_path(const std::string& name) {
+        fs::path current_dir = fs::path(__FILE__).parent_path();
+        fs::path build_dir = current_dir.parent_path() / "build";
+        if (!fs::exists(build_dir)) {
+            fs::create_directories(build_dir);
+        }
+        fs::path temp_path = build_dir / ("reader-" + name);
+        temp_files.push_back(temp_path);
+        return temp_path;
+    }
+
+    void TearDown() override {
+        if (cleanup_temp_files) {
+            for (const auto& path : temp_files) {
+                if (fs::exists(path)) {
+                    fs::remove(path);
+                }
+            }
+        }
+        temp_files.clear();
+    }
+};
+
 TEST(Reader, SupportedTypes) {
   auto supported_types = c2pa::Reader::supported_mime_types();
   EXPECT_TRUE(std::find(supported_types.begin(), supported_types.end(), "image/jpeg") != supported_types.end());
@@ -59,7 +89,7 @@ TEST_P(StreamWithManifestTests, StreamWithManifest) {
     test_stream_with_manifest(filename, mime_type, expected_content);
 }
 
-TEST(Reader, MultipleReadersSameFile)
+TEST_F(ReaderTest, MultipleReadersSameFile)
 {
     fs::path current_dir = fs::path(__FILE__).parent_path();
     fs::path test_file = current_dir / "../tests/fixtures/C.jpg";
@@ -94,7 +124,45 @@ TEST(Reader, MultipleReadersSameFile)
     EXPECT_TRUE(manifest3.find("C.jpg") != std::string::npos);
 };
 
-TEST(Reader, VideoStreamWithManifestUsingExtension) {
+TEST_F(ReaderTest, MultipleReadersSameFileUsingContext)
+{
+    fs::path current_dir = fs::path(__FILE__).parent_path();
+    fs::path test_file = current_dir / "../tests/fixtures/C.jpg";
+    ASSERT_TRUE(std::filesystem::exists(test_file)) << "Test file does not exist: " << test_file;
+
+    // Create a Context
+    auto context = c2pa::Context::create();
+
+    // create multiple readers from the same file using the context
+    auto reader1 = c2pa::Reader(context, test_file);
+    auto reader2 = c2pa::Reader(context, test_file);
+    auto reader3 = c2pa::Reader(context, test_file);
+
+    // all readers should be able to read the manifest independently
+    auto manifest1 = reader1.json();
+    auto manifest2 = reader2.json();
+    auto manifest3 = reader3.json();
+
+    // all manifests should be identical
+    EXPECT_EQ(manifest1, manifest2);
+    EXPECT_EQ(manifest2, manifest3);
+    EXPECT_EQ(manifest1, manifest3);
+
+    // all readers should report the same embedded status
+    EXPECT_EQ(reader1.is_embedded(), reader2.is_embedded());
+    EXPECT_EQ(reader2.is_embedded(), reader3.is_embedded());
+
+    // all readers should report the same remote URL status
+    EXPECT_EQ(reader1.remote_url().has_value(), reader2.remote_url().has_value());
+    EXPECT_EQ(reader2.remote_url().has_value(), reader3.remote_url().has_value());
+
+    // verify the manifest
+    EXPECT_TRUE(manifest1.find("C.jpg") != std::string::npos);
+    EXPECT_TRUE(manifest2.find("C.jpg") != std::string::npos);
+    EXPECT_TRUE(manifest3.find("C.jpg") != std::string::npos);
+};
+
+TEST_F(ReaderTest, VideoStreamWithManifestUsingExtension) {
   fs::path current_dir = fs::path(__FILE__).parent_path();
   fs::path test_file = current_dir.parent_path() / "tests" / "fixtures" / "video1.mp4";
   ASSERT_TRUE(std::filesystem::exists(test_file)) << "Test file does not exist: " << test_file;
@@ -104,6 +172,22 @@ TEST(Reader, VideoStreamWithManifestUsingExtension) {
   ASSERT_TRUE(file_stream.is_open()) << "Failed to open video file: " << test_file;
 
   auto reader = c2pa::Reader("mp4", file_stream);
+  auto manifest_store_json = reader.json();
+  EXPECT_TRUE(manifest_store_json.find("My Title") != std::string::npos);
+};
+
+TEST_F(ReaderTest, VideoStreamWithManifestUsingExtensionUsingContext) {
+  fs::path current_dir = fs::path(__FILE__).parent_path();
+  fs::path test_file = current_dir.parent_path() / "tests" / "fixtures" / "video1.mp4";
+  ASSERT_TRUE(std::filesystem::exists(test_file)) << "Test file does not exist: " << test_file;
+
+  // read the new manifest and display the JSON
+  std::ifstream file_stream(test_file, std::ios::binary);
+  ASSERT_TRUE(file_stream.is_open()) << "Failed to open video file: " << test_file;
+
+  // Create a Context and pass it to the Reader
+  auto context = c2pa::Context::create();
+  auto reader = c2pa::Reader(context, "mp4", file_stream);
   auto manifest_store_json = reader.json();
   EXPECT_TRUE(manifest_store_json.find("My Title") != std::string::npos);
 };
@@ -138,7 +222,7 @@ TEST_P(FileWithManifestTests, FileWithManifest) {
     test_file_with_manifest(filename, expected_content);
 }
 
-TEST(Reader, ImageFileWithManifestMultipleCalls)
+TEST_F(ReaderTest, ImageFileWithManifestMultipleCalls)
 {
     fs::path current_dir = fs::path(__FILE__).parent_path();
     fs::path test_file = current_dir / "../tests/fixtures/C.jpg";
@@ -155,7 +239,7 @@ TEST(Reader, ImageFileWithManifestMultipleCalls)
     EXPECT_TRUE(manifest_store_json_3.find("C.jpg") != std::string::npos);
 };
 
-TEST(Reader, FileNoManifest)
+TEST_F(ReaderTest, FileNoManifest)
 {
     fs::path current_dir = fs::path(__FILE__).parent_path();
     fs::path test_file = current_dir / "../tests/fixtures/A.jpg";
@@ -191,7 +275,7 @@ TEST_P(RemoteUrlTests, IsEmbeddedTest) {
     EXPECT_EQ(reader.is_embedded(), !expected_is_remote);
 }
 
-TEST(Reader, HasManifestUtf8Path) {
+TEST_F(ReaderTest, HasManifestUtf8Path) {
     auto current_dir = fs::path(__FILE__).parent_path();
     #ifdef _WIN32
       auto test_file = current_dir.parent_path() / "tests" / "fixtures" / L"CÖÄ_.jpg";
@@ -207,7 +291,26 @@ TEST(Reader, HasManifestUtf8Path) {
     EXPECT_TRUE(reader.is_embedded());
 }
 
-TEST(Reader, FileNotFound)
+TEST_F(ReaderTest, HasManifestUtf8PathUsingContext) {
+    auto current_dir = fs::path(__FILE__).parent_path();
+    #ifdef _WIN32
+      auto test_file = current_dir.parent_path() / "tests" / "fixtures" / L"CÖÄ_.jpg";
+    #else
+      auto test_file = current_dir.parent_path() / "tests" / "fixtures" / "CÖÄ_.jpg";
+    #endif
+    ASSERT_TRUE(std::filesystem::exists(test_file)) << "Test file does not exist: " << test_file;
+
+    std::ifstream stream(test_file, std::ios::binary);
+
+    // Create a Context and pass it to the Reader
+    auto context = c2pa::Context::create();
+    auto reader = c2pa::Reader(context, "image/jpeg", stream);
+
+    EXPECT_FALSE(reader.remote_url());
+    EXPECT_TRUE(reader.is_embedded());
+}
+
+TEST_F(ReaderTest, FileNotFound)
 {
     try
     {
@@ -224,7 +327,7 @@ TEST(Reader, FileNotFound)
     }
 };
 
-TEST(Reader, StreamClosed)
+TEST_F(ReaderTest, StreamClosed)
 {
     fs::path current_dir = fs::path(__FILE__).parent_path();
     fs::path test_file = current_dir / "../tests/fixtures/C.jpg";
@@ -241,7 +344,7 @@ TEST(Reader, StreamClosed)
     }, c2pa::C2paException);
 };
 
-TEST(Reader, ReadManifestWithTrustConfiguredTomlSettings)
+TEST_F(ReaderTest, ReadManifestWithTrustConfiguredTomlSettings)
 {
     fs::path current_dir = fs::path(__FILE__).parent_path();
     fs::path signed_image_path = current_dir / "../tests/fixtures/for_trusted_read.jpg";
@@ -265,7 +368,7 @@ TEST(Reader, ReadManifestWithTrustConfiguredTomlSettings)
     ASSERT_TRUE(parsed_manifest_json["validation_state"] == "Trusted");
 }
 
-TEST(Reader, ReadManifestWithTrustConfiguredJsonSettings)
+TEST_F(ReaderTest, ReadManifestWithTrustConfiguredJsonSettings)
 {
     fs::path current_dir = fs::path(__FILE__).parent_path();
     fs::path signed_image_path = current_dir / "../tests/fixtures/for_trusted_read.jpg";
@@ -289,7 +392,7 @@ TEST(Reader, ReadManifestWithTrustConfiguredJsonSettings)
     ASSERT_TRUE(parsed_manifest_json["validation_state"] == "Trusted");
 }
 
-TEST(Reader, ReaderFromIStreamWithContext)
+TEST_F(ReaderTest, ReaderFromIStreamWithContext)
 {
     fs::path current_dir = fs::path(__FILE__).parent_path();
     fs::path signed_path = current_dir / "../tests/fixtures/sample1_signed.wav";
@@ -309,14 +412,9 @@ TEST(Reader, ReaderFromIStreamWithContext)
     ASSERT_FALSE(json_result.empty());
 }
 
-// ============================================================================
-// Reader Error Handling
-// ============================================================================
-
-TEST(ReaderErrorHandling, EmptyFileReturnsError)
+TEST_F(ReaderTest, EmptyFileReturnsError)
 {
-    fs::path current_dir = fs::path(__FILE__).parent_path();
-    fs::path empty_file = current_dir / "../tests/fixtures/.empty_error_handling_test";
+    fs::path empty_file = get_temp_path("empty_error_handling_test");
     {
         std::ofstream f(empty_file, std::ios::binary);
         ASSERT_TRUE(f) << "Failed to create empty test file";
@@ -326,13 +424,11 @@ TEST(ReaderErrorHandling, EmptyFileReturnsError)
             c2pa::Reader reader(empty_file);
         },
         c2pa::C2paException);
-    std::filesystem::remove(empty_file);
 }
 
-TEST(ReaderErrorHandling, TruncatedFileReturnsError)
+TEST_F(ReaderTest, TruncatedFileReturnsError)
 {
-    fs::path current_dir = fs::path(__FILE__).parent_path();
-    fs::path truncated_file = current_dir / "../tests/fixtures/.truncated_error_handling_test";
+    fs::path truncated_file = get_temp_path("truncated_error_handling_test");
     {
         std::ofstream f(truncated_file, std::ios::binary);
         ASSERT_TRUE(f);
@@ -343,7 +439,6 @@ TEST(ReaderErrorHandling, TruncatedFileReturnsError)
             c2pa::Reader reader(truncated_file);
         },
         c2pa::C2paException);
-    std::filesystem::remove(truncated_file);
 }
 
 TEST(ReaderErrorHandling, UnsupportedMimeTypeReturnsError)
@@ -469,4 +564,67 @@ TEST(ReaderErrorHandling, ErrorMessagesWithAndWithoutContext)
         std::string msg = e.what();
         EXPECT_FALSE(msg.empty()) << "Error message should be present with context API";
     }
+}
+
+TEST_F(ReaderTest, GetResourceToStream) {
+    fs::path current_dir = fs::path(__FILE__).parent_path();
+    fs::path test_file = current_dir / "../tests/fixtures/C.jpg";
+
+    c2pa::Reader reader(test_file);
+    auto manifest_json = reader.json();
+    auto parsed = json::parse(manifest_json);
+
+    std::string active = parsed["active_manifest"];
+    auto manifest = parsed["manifests"][active];
+
+    // Extract thumbnail assertion URI
+    std::string thumbnail_uri = "self#jumbf=c2pa.assertions/c2pa.thumbnail.claim.jpeg";
+
+    std::ostringstream output;
+    auto byte_count = reader.get_resource(thumbnail_uri, output);
+
+    EXPECT_GT(byte_count, 0);
+    EXPECT_FALSE(output.str().empty());
+}
+
+TEST_F(ReaderTest, GetResourceToFilePath) {
+    fs::path current_dir = fs::path(__FILE__).parent_path();
+    fs::path test_file = current_dir / "../tests/fixtures/C.jpg";
+    fs::path output_file = get_temp_path("thumbnail_test_output.jpg");
+
+    c2pa::Reader reader(test_file);
+    auto manifest_json = reader.json();
+    auto parsed = json::parse(manifest_json);
+
+    std::string active = parsed["active_manifest"];
+    auto manifest = parsed["manifests"][active];
+
+    // Extract thumbnail assertion URI
+    std::string thumbnail_uri = "self#jumbf=c2pa.assertions/c2pa.thumbnail.claim.jpeg";
+
+    auto byte_count = reader.get_resource(thumbnail_uri, output_file);
+
+    EXPECT_GT(byte_count, 0);
+    EXPECT_TRUE(fs::exists(output_file));
+    EXPECT_GT(fs::file_size(output_file), 0);
+}
+
+TEST_F(ReaderTest, GetResourceInvalidUriThrows) {
+    fs::path current_dir = fs::path(__FILE__).parent_path();
+    fs::path test_file = current_dir / "../tests/fixtures/C.jpg";
+
+    c2pa::Reader reader(test_file);
+
+    std::ostringstream output;
+    EXPECT_THROW(reader.get_resource("nonexistent_uri", output), c2pa::C2paException);
+}
+
+TEST_F(ReaderTest, GetResourceWithInvalidUri) {
+    fs::path current_dir = fs::path(__FILE__).parent_path();
+    fs::path test_file = current_dir / "../tests/fixtures/C.jpg";
+
+    c2pa::Reader reader(test_file);
+
+    std::ostringstream output;
+    EXPECT_THROW(reader.get_resource("invalid://nonexistent", output), c2pa::C2paException);
 }

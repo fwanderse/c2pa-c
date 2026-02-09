@@ -64,6 +64,17 @@ else
 	LD_LIBRARY_PATH=$(RELEASE_BUILD_DIR)/tests:$$LD_LIBRARY_PATH ./$(RELEASE_BUILD_DIR)/tests/c2pa_c_tests
 endif
 
+# Run a single test by fully qualified name
+# Like this: make run-single-test TEST=BuilderTest.MergingBuildersThenSignMerged
+run-single-test: release
+	@if [ -z "$(TEST)" ]; then echo "Usage: make run-single-test TEST=SuiteName.TestName"; exit 1; fi
+	@echo "Running single test: $(TEST)"
+ifeq ($(OS),Darwin)
+	DYLD_LIBRARY_PATH=$(RELEASE_BUILD_DIR)/tests:$$DYLD_LIBRARY_PATH ./$(RELEASE_BUILD_DIR)/tests/c2pa_c_tests --gtest_filter="$(TEST)"
+else
+	LD_LIBRARY_PATH=$(RELEASE_BUILD_DIR)/tests:$$LD_LIBRARY_PATH ./$(RELEASE_BUILD_DIR)/tests/c2pa_c_tests --gtest_filter="$(TEST)"
+endif
+
 # Test with coverage reporting
 test-coverage: clean
 	cmake -S . -B build/coverage -G "Ninja" -DCMAKE_BUILD_TYPE=Debug -DENABLE_COVERAGE=ON $(CMAKE_OPTS)

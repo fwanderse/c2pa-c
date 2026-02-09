@@ -73,6 +73,12 @@ namespace c2pa
         return -1;
     }
 
+    /// @brief Known mimetypes for C2PA operations
+    namespace C2paMimeType {
+        /// @brief MIME type for C2PA binary archive format (working store)
+        constexpr const char* BinaryArchive = "application/c2pa";
+    }
+
     /// @brief Enum for settings/configuration format
     enum class ConfigFormat {
         JSON,
@@ -92,7 +98,7 @@ namespace c2pa
 
     /// C2paException class for C2pa errors.
     /// This class is used to throw exceptions for errors encountered by the C2pa library via c2pa_error().
-    class C2PA_CPP_API C2paException final : public std::exception
+    class C2PA_CPP_API C2paException : public std::exception
     {
     public:
         C2paException();
@@ -583,6 +589,10 @@ namespace c2pa
     private:
         C2paSigner *signer;
 
+        /// tsa_uri checks
+        static const char *validate_tsa_uri(const std::string &tsa_uri);
+        static const char *validate_tsa_uri(const std::optional<std::string> &tsa_uri);
+
     public:
         /// @brief Create a Signer from a callback function, signing algorithm, certificate, and TSA URI.
         /// @param callback  the callback function to use for signing.
@@ -736,6 +746,19 @@ namespace c2pa
         /// @throws C2pa::C2paException for errors encountered by the C2PA library.
         /// @note Prefer using the streaming APIs if possible
         void add_ingredient(const std::string &ingredient_json, const std::filesystem::path &source_path);
+
+        /// @brief Add an archive (working store) as an ingredient to the builder.
+        /// @param ingredient_json  Any fields of the ingredient you want to define (e.g. title, relationship).
+        /// @param archive The input stream to read the archive from.
+        /// @throws C2pa::C2paException for errors encountered by the C2PA library.
+        void add_ingredient_from_binary_archive(const std::string &ingredient_json, std::istream &archive);
+
+        /// @brief Add an archive (working store) as an ingredient to the builder.
+        /// @param ingredient_json  Any fields of the ingredient you want to define (e.g. title, relationship).
+        /// @param archive_path The path to the archive file.
+        /// @throws C2pa::C2paException for errors encountered by the C2PA library.
+        /// @note Prefer using the streaming APIs if possible
+        void add_ingredient_from_binary_archive(const std::string &ingredient_json, const std::filesystem::path &archive_path);
 
         /// @brief Add an action to the manifest the Builder is constructing.
         /// @param action_json JSON std::string containing the action data.

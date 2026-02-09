@@ -490,7 +490,7 @@ inline std::string c_string_to_string(T* c_result) {
     /// @param data_dir the directory to store binary resources (optional).
     /// @return a std::string containing the manifest json if a manifest was found.
     /// @throws a C2pa::C2paException for errors encountered by the C2PA library.
-    [[deprecated("Use stream APIs instead: Reader to read combined with Builder to manage ingredients")]]
+    [[deprecated("Use stream APIs instead: Reader to read data, combined with Builder to manage ingredients")]]
     std::optional<std::string> read_file(const std::filesystem::path &source_path, const std::optional<std::filesystem::path> data_dir)
     {
         const char* dir_ptr = nullptr;
@@ -774,15 +774,25 @@ inline std::string c_string_to_string(T* c_result) {
       return c_mime_types_to_vector(ptr, count);
     }
 
+    const char *Signer::validate_tsa_uri(const std::string &tsa_uri)
+    {
+        return tsa_uri.empty() ? nullptr : tsa_uri.c_str();
+    }
+
+    const char *Signer::validate_tsa_uri(const std::optional<std::string> &tsa_uri)
+    {
+        return (tsa_uri && !tsa_uri->empty()) ? tsa_uri->c_str() : nullptr;
+    }
+
     Signer::Signer(SignerFunc *callback, C2paSigningAlg alg, const std::string &sign_cert, const std::string &tsa_uri)
     {
         // Pass the C++ callback as a context to our static callback wrapper.
-        signer = c2pa_signer_create((const void *)callback, &signer_passthrough, alg, sign_cert.c_str(), tsa_uri.c_str());
+        signer = c2pa_signer_create((const void *)callback, &signer_passthrough, alg, sign_cert.c_str(), validate_tsa_uri(tsa_uri));
     }
 
     Signer::Signer(const std::string &alg, const std::string &sign_cert, const std::string &private_key, const std::optional<std::string> &tsa_uri)
     {
-        auto info = C2paSignerInfo { alg.c_str(), sign_cert.c_str(), private_key.c_str(), tsa_uri ? tsa_uri->c_str() : nullptr };
+        auto info = C2paSignerInfo { alg.c_str(), sign_cert.c_str(), private_key.c_str(), validate_tsa_uri(tsa_uri) };
         signer = c2pa_signer_from_info(&info);
     }
 
@@ -940,6 +950,17 @@ inline std::string c_string_to_string(T* c_result) {
         auto stream = detail::open_file_binary<std::ifstream>(source_path);
         auto format = detail::extract_file_extension(source_path);
         add_ingredient(ingredient_json, format.c_str(), *stream);
+    }
+
+    void Builder::add_ingredient_from_binary_archive(const std::string &ingredient_json, std::istream &archive)
+    {
+        add_ingredient(ingredient_json, C2paMimeType::BinaryArchive, archive);
+    }
+
+    void Builder::add_ingredient_from_binary_archive(const std::string &ingredient_json, const std::filesystem::path &archive_path)
+    {
+        auto stream = detail::open_file_binary<std::ifstream>(archive_path);
+        add_ingredient(ingredient_json, C2paMimeType::BinaryArchive, *stream);
     }
 
     void Builder::add_action(const std::string &action_json)
