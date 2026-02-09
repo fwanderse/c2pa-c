@@ -963,6 +963,22 @@ inline std::string c_string_to_string(T* c_result) {
         add_ingredient(ingredient_json, C2paMimeType::BinaryArchive, *stream);
     }
 
+    void Builder::add_ingredients_from_archive(std::istream &archive)
+    {
+        CppIStream c_archive(archive);
+        int result = c2pa_builder_add_ingredients_from_archive(builder, c_archive.c_stream);
+        if (result < 0)
+        {
+            throw C2paException();
+        }
+    }
+
+    void Builder::add_ingredients_from_archive(const std::filesystem::path &archive_path)
+    {
+        auto stream = detail::open_file_binary<std::ifstream>(archive_path);
+        add_ingredients_from_archive(*stream);
+    }
+
     void Builder::add_action(const std::string &action_json)
     {
         int result = c2pa_builder_add_action(builder, action_json.c_str());

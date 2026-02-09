@@ -760,6 +760,31 @@ namespace c2pa
         /// @note Prefer using the streaming APIs if possible
         void add_ingredient_from_binary_archive(const std::string &ingredient_json, const std::filesystem::path &archive_path);
 
+        /// @brief Add all ingredients from an archive to this builder.
+        ///
+        /// Unlike add_ingredient_from_binary_archive (which only transfers the first
+        /// ingredient from the archive), this method transfers every ingredient from
+        /// the archive's active manifest, preserving relationships (parentOf,
+        /// componentOf, inputTo) and all associated resources including the full
+        /// chain of provenance (manifest_data).
+        ///
+        /// This is intended for merging ingredients from multiple sources into a
+        /// single builder, such as combining ingredients from several archived
+        /// builders.
+        ///
+        /// @param archive The input stream to read the archive from.
+        /// @throws C2pa::C2paException for errors encountered by the C2PA library.
+        void add_ingredients_from_archive(std::istream &archive);
+
+        /// @brief Add all ingredients from an archive file to this builder.
+        ///
+        /// File-based overload of add_ingredients_from_archive(std::istream&).
+        ///
+        /// @param archive_path The path to the archive file.
+        /// @throws C2pa::C2paException for errors encountered by the C2PA library.
+        /// @note Prefer using the streaming APIs if possible
+        void add_ingredients_from_archive(const std::filesystem::path &archive_path);
+
         /// @brief Add an action to the manifest the Builder is constructing.
         /// @param action_json JSON std::string containing the action data.
         /// @throws C2pa::C2paException for errors encountered by the C2PA library.
