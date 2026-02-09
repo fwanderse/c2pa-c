@@ -98,7 +98,7 @@ namespace c2pa
 
     /// C2paException class for C2pa errors.
     /// This class is used to throw exceptions for errors encountered by the C2pa library via c2pa_error().
-    class C2PA_CPP_API C2paException final : public std::exception
+    class C2PA_CPP_API C2paException : public std::exception
     {
     public:
         C2paException();
