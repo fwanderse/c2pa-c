@@ -16,10 +16,6 @@ For the best experience, read the docs on the [CAI Open Source SDK documentation
 </div>
 </div>
 
-## Overview
-
-TODO-TMN
-
 ## Using c2pa_cpp
 
 The recommended way to use this library in your own CMake project is with [FetchContent](https://cmake.org/cmake/help/latest/module/FetchContent.html):
