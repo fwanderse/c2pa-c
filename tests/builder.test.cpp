@@ -3939,3 +3939,99 @@ TEST_F(BuilderTest, MergingBuildersThenSignMergedPreservedRelationships)
     EXPECT_EQ(ingredient_relationships["Ingredient for placed image #2"], "componentOf")
         << "componentOf preserved (matches default)";
 }
+
+// Tests merging when a single builder/archive holds multiple ingredients (1 parent + 2 components).
+//
+// Critical: reader.to_ingredient() (reader.rs:1307) only returns .first() — the first
+// ingredient. So add_ingredient("application/c2pa", multi_ingredient_archive) silently
+// drops all but the first ingredient. Only from_archive → into_builder preserves them all.
+//
+// Scenario:
+//   Archive 1: builder with 3 ingredients (1 parentOf, 2 componentOf)
+//   Archive 2: builder with 1 ingredient (componentOf)
+//   Merge via from_archive(archive1) + add_ingredient(archive2)
+//   Expected: 4 ingredients total with all relationships preserved.
+TEST_F(BuilderTest, RelationshipPreservedWhenMerging)
+{
+    auto manifest = c2pa_test::read_text_file(c2pa_test::get_fixture_path("training.json"));
+
+    // Archive 1: a single builder that already has 3 ingredients (1 parent + 2 components)
+    auto builder1 = c2pa::Builder(manifest);
+    builder1.add_ingredient(
+        R"({"title": "Imported image", "relationship": "parentOf"})",
+        c2pa_test::get_fixture_path("sample1.webp"));
+    builder1.add_ingredient(
+        R"({"title": "Placed image #1", "relationship": "componentOf"})",
+        c2pa_test::get_fixture_path("A.jpg"));
+    builder1.add_ingredient(
+        R"({"title": "Placed image #2", "relationship": "componentOf"})",
+        c2pa_test::get_fixture_path("sample1.gif"));
+    std::stringstream archive1_stream(std::ios::in | std::ios::out | std::ios::binary);
+    EXPECT_NO_THROW({ builder1.to_archive(archive1_stream); });
+
+    // Archive 2: a separate builder with 1 component ingredient
+    auto builder2 = c2pa::Builder(manifest);
+    builder2.add_ingredient(
+        R"({"title": "Other placed element", "relationship": "componentOf"})",
+        c2pa_test::get_fixture_path("C.jpg"));
+    std::stringstream archive2_stream(std::ios::in | std::ios::out | std::ios::binary);
+    EXPECT_NO_THROW({ builder2.to_archive(archive2_stream); });
+
+    // Merge: from_archive on the multi-ingredient archive preserves all 3 ingredients.
+    archive1_stream.seekg(0);
+    auto merge_builder = c2pa::Builder::from_archive(archive1_stream);
+
+    // Add archive2's ingredient (componentOf matches default, so {} is safe)
+    c2pa::load_settings(R"({"verify": {"verify_after_reading": false}})", "json");
+    archive2_stream.seekg(0);
+    merge_builder.add_ingredient(R"({})", "application/c2pa", archive2_stream);
+    c2pa::load_settings(R"({"verify": {"verify_after_reading": true}})", "json");
+
+    // Save merged archive
+    std::stringstream merged_archive_stream(std::ios::in | std::ios::out | std::ios::binary);
+    EXPECT_NO_THROW({ merge_builder.to_archive(merged_archive_stream); });
+
+    // Export via from_archive (preserves all 4 ingredients and relationships)
+    merged_archive_stream.seekg(0);
+    auto export_builder = c2pa::Builder::from_archive(merged_archive_stream);
+
+    // Sign
+    auto signer = c2pa_test::create_test_signer();
+    std::ifstream final_source(c2pa_test::get_fixture_path("A.jpg"), std::ios::binary);
+    ASSERT_TRUE(final_source.is_open());
+    std::stringstream dest_stream(std::ios::in | std::ios::out | std::ios::binary);
+    EXPECT_NO_THROW({
+        export_builder.sign("image/jpeg", final_source, dest_stream, signer);
+    });
+
+    // Read and log the manifest
+    dest_stream.seekg(0);
+    auto reader = c2pa::Reader(c2pa::Context::create(), "image/jpeg", dest_stream);
+    std::string manifest_json = reader.json();
+
+    auto json_result = json::parse(manifest_json);
+    EXPECT_TRUE(json_result.contains("active_manifest"));
+    std::string active = json_result["active_manifest"];
+    ASSERT_TRUE(json_result["manifests"][active].contains("ingredients"));
+
+    auto ingredients = json_result["manifests"][active]["ingredients"];
+    EXPECT_EQ(ingredients.size(), 4u)
+        << "Should have 4 ingredients: 3 from archive1 + 1 from archive2";
+
+    // Verify all relationships are preserved
+    std::map<std::string, std::string> ingredient_relationships;
+    for (const auto& ingredient : ingredients) {
+        EXPECT_TRUE(ingredient.contains("title"));
+        EXPECT_TRUE(ingredient.contains("relationship"));
+        ingredient_relationships[ingredient["title"]] = ingredient["relationship"];
+    }
+
+    EXPECT_EQ(ingredient_relationships["Imported image"], "parentOf")
+        << "parentOf from multi-ingredient archive must be preserved";
+    EXPECT_EQ(ingredient_relationships["Placed image #1"], "componentOf")
+        << "componentOf from multi-ingredient archive preserved";
+    EXPECT_EQ(ingredient_relationships["Placed image #2"], "componentOf")
+        << "componentOf from multi-ingredient archive preserved";
+    EXPECT_EQ(ingredient_relationships["Other placed element"], "componentOf")
+        << "componentOf from single-ingredient archive preserved";
+}
