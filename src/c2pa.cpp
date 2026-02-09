@@ -774,24 +774,25 @@ inline std::string c_string_to_string(T* c_result) {
       return c_mime_types_to_vector(ptr, count);
     }
 
+    const char *Signer::validate_tsa_uri(const std::string &tsa_uri)
+    {
+        return tsa_uri.empty() ? nullptr : tsa_uri.c_str();
+    }
+
+    const char *Signer::validate_tsa_uri(const std::optional<std::string> &tsa_uri)
+    {
+        return (tsa_uri && !tsa_uri->empty()) ? tsa_uri->c_str() : nullptr;
+    }
+
     Signer::Signer(SignerFunc *callback, C2paSigningAlg alg, const std::string &sign_cert, const std::string &tsa_uri)
     {
-        // Validate that if tsa_uri is provided, it's not empty, if empty nullify it
-        const char* tsa_uri_ptr = tsa_uri.empty() ? nullptr : tsa_uri.c_str();
-
         // Pass the C++ callback as a context to our static callback wrapper.
-        signer = c2pa_signer_create((const void *)callback, &signer_passthrough, alg, sign_cert.c_str(), tsa_uri_ptr);
+        signer = c2pa_signer_create((const void *)callback, &signer_passthrough, alg, sign_cert.c_str(), validate_tsa_uri(tsa_uri));
     }
 
     Signer::Signer(const std::string &alg, const std::string &sign_cert, const std::string &private_key, const std::optional<std::string> &tsa_uri)
     {
-        // Validate that if tsa_uri is provided, it's not empty, if empty nullify it
-        const char* tsa_uri_ptr = nullptr;
-        if (tsa_uri && !tsa_uri->empty()) {
-            tsa_uri_ptr = tsa_uri->c_str();
-        }
-
-        auto info = C2paSignerInfo { alg.c_str(), sign_cert.c_str(), private_key.c_str(), tsa_uri_ptr };
+        auto info = C2paSignerInfo { alg.c_str(), sign_cert.c_str(), private_key.c_str(), validate_tsa_uri(tsa_uri) };
         signer = c2pa_signer_from_info(&info);
     }
 

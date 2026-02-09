@@ -589,6 +589,10 @@ namespace c2pa
     private:
         C2paSigner *signer;
 
+        /// tsa_uri checks
+        static const char *validate_tsa_uri(const std::string &tsa_uri);
+        static const char *validate_tsa_uri(const std::optional<std::string> &tsa_uri);
+
     public:
         /// @brief Create a Signer from a callback function, signing algorithm, certificate, and TSA URI.
         /// @param callback  the callback function to use for signing.
