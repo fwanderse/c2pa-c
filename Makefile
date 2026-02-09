@@ -65,7 +65,7 @@ else
 endif
 
 # Run a single test by fully qualified name
-# Like this: make run-single-test TEST=BuilderTest.MergingBuildersThenSignMergedWNoRelationships
+# Like this: make run-single-test TEST=BuilderTest.MergingBuildersThenSignMerged
 run-single-test: release
 	@if [ -z "$(TEST)" ]; then echo "Usage: make run-single-test TEST=SuiteName.TestName"; exit 1; fi
 	@echo "Running single test: $(TEST)"
