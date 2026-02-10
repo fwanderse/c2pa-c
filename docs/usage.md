@@ -70,7 +70,7 @@ const std::string manifest_json = R"{
 
 ## Using settings
 
-The behavior of the SDK cn be configured through various [settings](https://github.com/contentauth/c2pa-rs/blob/main/docs/settings.md#property-reference). SDK settings can be loaded from JSON or TOML files, as well as valid JSON strings directly in the code.
+The behavior of the SDK cn be configured through various [settings](https://opensource.contentauthenticity.org/docs/manifest/json-ref/settings-schema/). SDK settings can be loaded from JSON or TOML files, as well as valid JSON strings directly in the code.
 
 SDK settings are set on the `Context` objects used by the Builder and Reader objects.
 
