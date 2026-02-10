@@ -70,7 +70,10 @@ endfunction()
 file(GLOB CPP_TESTS "*.test.cpp")
 add_executable(c2pa_c_tests ${CPP_TESTS})
 target_link_libraries(c2pa_c_tests PRIVATE c2pa_cpp gtest_main)
-target_include_directories(c2pa_c_tests PRIVATE ${nlohmann_json_SOURCE_DIR}/include)
+target_include_directories(c2pa_c_tests PRIVATE
+    ${nlohmann_json_SOURCE_DIR}/include
+    ${CMAKE_CURRENT_SOURCE_DIR}
+)
 if(NOT MSVC)
     target_compile_options(c2pa_c_tests PRIVATE -Wno-deprecated-declarations)
 endif()
@@ -120,7 +123,7 @@ elseif(UNIX)
 endif()
 
 # C tests
-add_executable(ctest test.c)
+add_executable(ctest c-app-test/test.c)
 
 # If building from source, ensure ctest waits for the Rust build to complete
 if(C2PA_BUILD_FROM_SOURCE AND TARGET build_c2pa_c)
@@ -150,7 +153,10 @@ else()
     # On Unix systems, link directly to the shared library
     target_link_libraries(ctest PRIVATE "${C2PA_C_LIB}")
 endif()
-target_include_directories(ctest PRIVATE "${C2PA_PREBUILT_INCLUDE_DIR}")
+target_include_directories(ctest PRIVATE
+    "${C2PA_PREBUILT_INCLUDE_DIR}"
+    ${CMAKE_CURRENT_SOURCE_DIR}/c-app-test
+)
 setup_c2pa_runtime_deps(ctest)
 
 # Register tests with CTest

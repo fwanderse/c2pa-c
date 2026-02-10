@@ -49,7 +49,7 @@ inline std::string read_text_file(const fs::path &path)
 /// @return Full path to the fixture
 inline fs::path get_fixture_path(const std::string& filename)
 {
-    fs::path current_dir = fs::path(__FILE__).parent_path();
+    fs::path current_dir = fs::path(__FILE__).parent_path().parent_path();
     return current_dir / "fixtures" / filename;
 }
 

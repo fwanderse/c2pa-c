@@ -20,7 +20,7 @@
 #include <cstring>
 
 #include "c2pa.hpp"
-#include "test_utils.hpp"
+#include "include/test_utils.hpp"
 
 namespace fs = std::filesystem;
 using nlohmann::json;
