@@ -3564,3 +3564,113 @@ TEST_F(BuilderTest, ArchiveToFilePath) {
     EXPECT_TRUE(fs::exists(archive_path));
     EXPECT_GT(fs::file_size(archive_path), 0);
 }
+
+TEST_F(BuilderTest, ExtractIngredientsFromArchive) {
+    auto manifest = c2pa_test::read_text_file(c2pa_test::get_fixture_path("training.json"));
+
+    // Create a builder with 3 ingredients: A.jpg, C.jpg, and sample1.gif
+    auto builder = c2pa::Builder(manifest);
+
+    std::string ingredient1_json = R"({"title": "A.jpg", "relationship": "parentOf"})";
+    builder.add_ingredient(ingredient1_json, c2pa_test::get_fixture_path("A.jpg"));
+
+    std::string ingredient2_json = R"({"title": "C.jpg", "relationship": "componentOf"})";
+    builder.add_ingredient(ingredient2_json, c2pa_test::get_fixture_path("C.jpg"));
+
+    std::string ingredient3_json = R"({"title": "sample.gif", "relationship": "componentOf"})";
+    builder.add_ingredient(ingredient3_json, c2pa_test::get_fixture_path("sample1.gif"));
+
+    // Archive the builder
+    std::stringstream archive_stream(std::ios::in | std::ios::out | std::ios::binary);
+    EXPECT_NO_THROW({
+        builder.to_archive(archive_stream);
+    });
+
+    // Skip verification since archives have placeholder signatures
+    c2pa::load_settings(R"({"verify": {"verify_after_reading": false}})", "json");
+
+    // Create a Reader from the archive and display its JSON
+    archive_stream.seekg(0);
+    auto reader = c2pa::Reader("application/c2pa", archive_stream);
+    auto json_result = reader.json();
+    std::cout << "Archive JSON: " << json_result << std::endl;
+
+    // Parse the archive JSON to extract ingredient information
+    auto parsed = json::parse(json_result);
+    std::string active = parsed["active_manifest"];
+    auto ingredients = parsed["manifests"][active]["ingredients"];
+
+    // Create a fresh merged builder by injecting the ingredients into the manifest definition.
+    // This is the correct pattern: put ingredient JSON into the manifest's "ingredients" array,
+    // then add any referenced binary resources (thumbnails, manifest_data) via add_resource.
+    json manifest_json = json::parse(manifest);
+    manifest_json["ingredients"] = ingredients;
+    auto merged_builder = c2pa::Builder(manifest_json.dump());
+
+    // Now add all referenced resources for each ingredient
+    for (size_t i = 0; i < ingredients.size(); i++) {
+        const auto& ingredient = ingredients[i];
+        std::string title = ingredient["title"];
+        std::cout << "Processing ingredient " << i << ": " << title << std::endl;
+
+        // Copy thumbnail resource if present
+        if (ingredient.contains("thumbnail") && ingredient["thumbnail"].contains("identifier")) {
+            std::string thumbnail_id = ingredient["thumbnail"]["identifier"];
+            std::cout << "  Copying thumbnail: " << thumbnail_id << std::endl;
+
+            std::stringstream thumbnail_stream(std::ios::in | std::ios::out | std::ios::binary);
+            size_t thumbnail_bytes = reader.get_resource(thumbnail_id, thumbnail_stream);
+            std::cout << "  Extracted thumbnail: " << thumbnail_bytes << " bytes" << std::endl;
+
+            thumbnail_stream.seekg(0);
+            EXPECT_NO_THROW({
+                merged_builder.add_resource(thumbnail_id, thumbnail_stream);
+            });
+        }
+
+        // Copy manifest_data resource if present (C2PA-signed ingredients)
+        if (ingredient.contains("manifest_data") &&
+            ingredient["manifest_data"].is_object() &&
+            ingredient["manifest_data"].contains("identifier")) {
+            std::string manifest_data_id = ingredient["manifest_data"]["identifier"];
+            std::cout << "  Copying manifest_data: " << manifest_data_id << std::endl;
+
+            std::stringstream manifest_data_stream(std::ios::in | std::ios::out | std::ios::binary);
+            size_t manifest_data_bytes = reader.get_resource(manifest_data_id, manifest_data_stream);
+            std::cout << "  Extracted manifest_data: " << manifest_data_bytes << " bytes" << std::endl;
+
+            manifest_data_stream.seekg(0);
+            EXPECT_NO_THROW({
+                merged_builder.add_resource(manifest_data_id, manifest_data_stream);
+            });
+        }
+    }
+
+    std::cout << "Successfully transferred " << ingredients.size() << " ingredients to merged builder" << std::endl;
+
+    // Sign the merged builder
+    auto signer = c2pa_test::create_test_signer();
+    auto source_path = c2pa_test::get_fixture_path("A.jpg");
+    auto output_path = get_temp_path("merged_output.jpg");
+
+    std::vector<unsigned char> manifest_data;
+    EXPECT_NO_THROW({
+        manifest_data = merged_builder.sign(source_path, output_path, signer);
+    });
+    ASSERT_FALSE(manifest_data.empty());
+
+    // Read and log the merged builder's manifest JSON
+    auto merged_reader = c2pa::Reader(output_path);
+    auto merged_json = merged_reader.json();
+    std::cout << "\n=== Merged Builder Manifest JSON ===" << std::endl;
+    std::cout << merged_json << std::endl;
+
+    // Verify all 3 ingredients are present in the merged builder
+    auto merged_parsed = json::parse(merged_json);
+    std::string merged_active = merged_parsed["active_manifest"];
+    auto merged_ingredients = merged_parsed["manifests"][merged_active]["ingredients"];
+    EXPECT_EQ(merged_ingredients.size(), 3) << "Merged builder should have all 3 ingredients";
+
+    // Reset settings
+    c2pa::load_settings(R"({"verify": {"verify_after_reading": true}})", "json");
+}
