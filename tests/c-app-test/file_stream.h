@@ -92,9 +92,7 @@ C2paStream *create_file_stream(FILE *file)
 
 void release_stream(C2paStream *stream)
 {
-    if (stream != NULL) {
-        c2pa_release_stream(stream);
-    }
+    c2pa_release_stream(stream);
 }
 
 C2paStream *open_file_stream(const char *path, const char *mode)
