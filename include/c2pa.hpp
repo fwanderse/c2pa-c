@@ -34,7 +34,8 @@
 #include <cerrno>
 #include <filesystem>
 #include <fstream>
-#include <iostream>
+#include <istream>
+#include <ostream>
 #include <string>
 #include <vector>
 #include <optional>

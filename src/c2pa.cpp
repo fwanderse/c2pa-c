@@ -57,7 +57,7 @@ intptr_t signer_passthrough(const void *context, const unsigned char *data, uint
   try
   {
     // the context is a pointer to the C++ callback function
-    c2pa::SignerFunc *callback = (c2pa::SignerFunc *)context;
+    auto* callback = reinterpret_cast<c2pa::SignerFunc*>(const_cast<void*>(context));
     std::vector<uint8_t> data_vec(data, data + len);
     std::vector<uint8_t> signature_vec = (callback)(data_vec);
     if (signature_vec.size() > sig_max_len)
@@ -572,12 +572,16 @@ inline std::string c_string_to_string(T* c_result) {
 
     intptr_t CppIStream::writer(StreamContext *context, const uint8_t *buffer, intptr_t size)
     {
-        return detail::stream_writer<std::iostream>(context, buffer, size);
+        (void)context;
+        (void)buffer;
+        (void)size;
+        return stream_error_return(StreamError::InvalidArgument);
     }
 
     intptr_t CppIStream::flusher(StreamContext *context)
     {
-        return detail::stream_flusher<std::iostream>(context);
+        (void)context;
+        return stream_error_return(StreamError::InvalidArgument);
     }
 
     /// Ostream Class wrapper for C2paStream implementation.
@@ -903,6 +907,7 @@ inline std::string c_string_to_string(T* c_result) {
     Builder& Builder::with_definition(const std::string &manifest_json)
     {
         C2paBuilder* updated = c2pa_builder_with_definition(builder, manifest_json.c_str());
+        builder = nullptr;
         if (updated == nullptr) {
             throw C2paException("Failed to set builder definition");
         }

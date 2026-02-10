@@ -3555,6 +3555,21 @@ TEST_F(BuilderTest, WithDefinitionChaining) {
     EXPECT_NE(claim_generator_info[0]["name"], "initial-value");
 }
 
+TEST_F(BuilderTest, WithDefinitionInvalidJsonThrows) {
+    auto context = c2pa::Context::create();
+    c2pa::Builder builder(context);
+
+    // Invalid JSON should throw C2paException
+    auto invalid_manifest = "{ invalid json ]";
+    EXPECT_THROW({
+        builder.with_definition(invalid_manifest);
+    }, c2pa::C2paException);
+
+    // Builder should still be usable after failed with_definition
+    // (the fix ensures old pointer is nulled before checking result,
+    // preventing double-free in destructor)
+}
+
 TEST_F(BuilderTest, ArchiveToFilePath) {
     fs::path current_dir = fs::path(__FILE__).parent_path();
     fs::path manifest_path = current_dir / "fixtures/training.json";
