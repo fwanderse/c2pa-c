@@ -11,12 +11,7 @@
 // each license.
 
 /// @file test.cpp
-/// @brief Simple C++ SDK example showing basic C2PA operations
-/// @details This demonstrates:
-///          - Reading manifests with default context
-///          - Signing with default context
-///          - Using trust anchors for validation
-///          - Stream-based operations
+/// @brief Simple C++ SDK example showing some C2PA operations
 
 #include <iostream>
 #include <fstream>
@@ -59,7 +54,7 @@ int main()
     cout << "Version: " << c2pa::version() << endl << endl;
 
     // ========================================================================
-    // Example 1: Reading a manifest (using default context)
+    // Example 1: Reading a manifest
     // ========================================================================
     cout << "--- Example 1: Reading a manifest ---" << endl;
     try
@@ -86,7 +81,7 @@ int main()
         assert_exists("Reader.get_resource", thumb_path);
 
         ifs.close();
-        cout << "✓ Successfully read manifest and extracted thumbnail" << endl;
+        cout << "Successfully read manifest and extracted thumbnail" << endl;
     }
     catch (c2pa::C2paException &e)
     {
@@ -95,7 +90,7 @@ int main()
     }
 
     // ========================================================================
-    // Example 2: Signing with default context (basic signing)
+    // Example 2: Signing with default context
     // ========================================================================
     cout << "\n--- Example 2: Signing with default context ---" << endl;
     try
@@ -125,7 +120,7 @@ int main()
         free(manifest);
         free(certs);
 
-        cout << "✓ Successfully signed image with default context" << endl;
+        cout << "Successfully signed image with default context" << endl;
     }
     catch (c2pa::C2paException &e)
     {
@@ -175,7 +170,7 @@ int main()
         free(manifest);
         free(certs);
 
-        cout << "✓ Successfully signed using streams" << endl;
+        cout << "Successfully signed using streams" << endl;
     }
     catch (c2pa::C2paException const &e)
     {
@@ -196,7 +191,7 @@ int main()
         auto trusted_context = c2pa::Context::from_toml(trust_settings);
         free(trust_settings);
 
-        cout << "✓ Created context with trust anchors" << endl;
+        cout << "Created context with trust anchors" << endl;
 
         // Sign an image with trust context
         char *manifest = load_file("tests/fixtures/training.json");
@@ -214,7 +209,7 @@ int main()
         auto signed_manifest = builder.sign("tests/fixtures/C.jpg", trusted_signed_path, signer);
         assert_exists("Trusted Builder.sign", trusted_signed_path);
 
-        cout << "✓ Signed image with trust context" << endl;
+        cout << "Signed image with trust context" << endl;
 
         // Read back with trust context - should validate as "Trusted"
         auto trusted_reader = c2pa::Reader(trusted_context, trusted_signed_path);
@@ -222,15 +217,14 @@ int main()
 
         // Note: In a real scenario with valid trust chain, this would show "Trusted"
         // For test fixtures, it may show as "Valid" depending on the certificate chain
-        cout << "✓ Read manifest with trust validation" << endl;
+        cout << "Read manifest with trust validation" << endl;
 
         // Compare: read without trust context - will only show "Valid" at best
         auto default_context2 = c2pa::Context::create();
         auto basic_reader = c2pa::Reader(default_context2, trusted_signed_path);
         string basic_json = basic_reader.json();
 
-        cout << "✓ Trust example: Context with trust anchors provides enhanced validation" << endl;
-        cout << "  (With trust: can validate as 'Trusted'; without: only 'Valid')" << endl;
+        cout << "Trust example: Context with trust anchors provides trust validation" << endl;
 
         free(manifest);
         free(certs);
@@ -267,14 +261,14 @@ int main()
             .with_json(settings_json)
             .create_context();
 
-        cout << "✓ Created context with custom settings via builder pattern" << endl;
+        cout << "Created context with custom settings via builder pattern" << endl;
 
         // Use this context for operations that need specific configuration
         char *manifest = load_file("tests/fixtures/training.json");
         auto builder = c2pa::Builder(custom_context, manifest);
 
         // Builder now has custom settings applied
-        cout << "✓ Builder created with custom context settings" << endl;
+        cout << "Builder created with custom context settings" << endl;
 
         free(manifest);
     }
