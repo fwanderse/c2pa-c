@@ -282,6 +282,24 @@ inline std::string c_string_to_string(T* c_result) {
     return str;
 }
 
+/// @brief Convert C byte array result to C++ vector
+/// @param data Raw byte array from C API
+/// @param size Size of the byte array (result from C API call)
+/// @return Vector containing the bytes (throws if null or negative size)
+/// @details This helper extracts the pattern of checking C API results,
+///          copying to a vector, and freeing the C-allocated memory.
+///          The C API contract is: if result < 0 or data == nullptr, the operation failed.
+inline std::vector<unsigned char> to_byte_vector(const unsigned char* data, int64_t size) {
+    if (size < 0 || data == nullptr) {
+        safe_c2pa_free(data);  // May be null or allocated, safe_c2pa_free handles both
+        throw C2paException();
+    }
+
+    auto result = std::vector<unsigned char>(data, data + size);
+    safe_c2pa_free(data);
+    return result;
+}
+
 } // namespace detail
 
     /// C2paException class for C2PA errors.
@@ -987,16 +1005,7 @@ inline std::string c_string_to_string(T* c_result) {
 
         // c2pa_builder_sign() uses streams synchronously and completes before returning
         auto result = c2pa_builder_sign(builder, format.c_str(), c_source.c_stream, c_dest.c_stream, signer.c2pa_signer(), &c2pa_manifest_bytes);
-        if (result < 0 || c2pa_manifest_bytes == nullptr)
-        {
-            detail::safe_c2pa_free(c2pa_manifest_bytes);
-            throw C2paException();
-        }
-
-        auto manifest_bytes = std::vector<unsigned char>(c2pa_manifest_bytes, c2pa_manifest_bytes + result);
-        detail::safe_c2pa_free(c2pa_manifest_bytes);
-
-        return manifest_bytes;
+        return detail::to_byte_vector(c2pa_manifest_bytes, result);
     }
 
     std::vector<unsigned char> Builder::sign(const std::string &format, std::istream &source, std::iostream &dest, Signer &signer)
@@ -1009,16 +1018,7 @@ inline std::string c_string_to_string(T* c_result) {
 
         // c2pa_builder_sign() uses streams synchronously and completes before returning
         auto result = c2pa_builder_sign(builder, format.c_str(), c_source.c_stream, c_dest.c_stream, signer.c2pa_signer(), &c2pa_manifest_bytes);
-        if (result < 0 || c2pa_manifest_bytes == nullptr)
-        {
-            detail::safe_c2pa_free(c2pa_manifest_bytes);
-            throw C2paException();
-        }
-
-        auto manifest_bytes = std::vector<unsigned char>(c2pa_manifest_bytes, c2pa_manifest_bytes + result);
-        detail::safe_c2pa_free(c2pa_manifest_bytes);
-
-        return manifest_bytes;
+        return detail::to_byte_vector(c2pa_manifest_bytes, result);
     }
 
     /// @brief Sign a file and write the signed data to an output file.
@@ -1111,14 +1111,7 @@ inline std::string c_string_to_string(T* c_result) {
     {
         const unsigned char *c2pa_manifest_bytes = nullptr;
         auto result = c2pa_builder_data_hashed_placeholder(builder, reserve_size, format.c_str(), &c2pa_manifest_bytes);
-        if (result < 0 || c2pa_manifest_bytes == nullptr)
-        {
-            throw(C2paException());
-        }
-
-        auto data = std::vector<unsigned char>(c2pa_manifest_bytes, c2pa_manifest_bytes + result);
-        detail::safe_c2pa_free(c2pa_manifest_bytes);
-        return data;
+        return detail::to_byte_vector(c2pa_manifest_bytes, result);
     }
 
     std::vector<unsigned char> Builder::sign_data_hashed_embeddable(Signer &signer, const std::string &data_hash, const std::string &format, std::istream *asset)
@@ -1134,28 +1127,14 @@ inline std::string c_string_to_string(T* c_result) {
         {
             result = c2pa_builder_sign_data_hashed_embeddable(builder, signer.c2pa_signer(), data_hash.c_str(), format.c_str(), nullptr, &c2pa_manifest_bytes);
         }
-        if (result < 0 || c2pa_manifest_bytes == nullptr)
-        {
-            throw(C2paException());
-        }
-
-        auto data = std::vector<unsigned char>(c2pa_manifest_bytes, c2pa_manifest_bytes + result);
-        detail::safe_c2pa_free(c2pa_manifest_bytes);
-        return data;
+        return detail::to_byte_vector(c2pa_manifest_bytes, result);
     }
 
     std::vector<unsigned char> Builder::format_embeddable(const std::string &format, std::vector<unsigned char> &data)
     {
         const unsigned char *c2pa_manifest_bytes = nullptr;
         auto result = c2pa_format_embeddable(format.c_str(), data.data(), data.size(), &c2pa_manifest_bytes);
-        if (result < 0 || c2pa_manifest_bytes == nullptr)
-        {
-            throw(C2paException());
-        }
-
-        auto formatted_data = std::vector<unsigned char>(c2pa_manifest_bytes, c2pa_manifest_bytes + result);
-        detail::safe_c2pa_free(c2pa_manifest_bytes);
-        return formatted_data;
+        return detail::to_byte_vector(c2pa_manifest_bytes, result);
     }
 
     std::vector<std::string> Builder::supported_mime_types() {
