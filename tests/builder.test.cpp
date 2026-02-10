@@ -14,7 +14,9 @@
 #include <gtest/gtest.h>
 #include <nlohmann/json.hpp>
 #include <algorithm>
+#include <functional>
 #include <iostream>
+#include <memory>
 #include <set>
 #include <string>
 #include <filesystem>
@@ -3744,8 +3746,6 @@ TEST_F(BuilderTest, ExtractIngredientsFromArchive) {
       std::string active = parsed["active_manifest"];
       auto ingredients = parsed["manifests"][active]["ingredients"];
 
-      std::cout << "Transferring " << ingredients.size() << " ingredients from archive" << std::endl;
-
       // Create a builder with the ingredients injected into the manifest definition
       json manifest_json = json::parse(base_manifest_json);
       manifest_json["ingredients"] = ingredients;
@@ -3755,16 +3755,13 @@ TEST_F(BuilderTest, ExtractIngredientsFromArchive) {
       for (size_t i = 0; i < ingredients.size(); i++) {
           const auto& ingredient = ingredients[i];
           std::string title = ingredient["title"];
-          std::cout << "  Processing ingredient " << i << ": " << title << std::endl;
 
           // Copy thumbnail resource if present
           if (ingredient.contains("thumbnail") && ingredient["thumbnail"].contains("identifier")) {
               std::string thumbnail_id = ingredient["thumbnail"]["identifier"];
-              std::cout << "    Copying thumbnail: " << thumbnail_id << std::endl;
 
               std::stringstream thumbnail_stream(std::ios::in | std::ios::out | std::ios::binary);
-              size_t thumbnail_bytes = reader.get_resource(thumbnail_id, thumbnail_stream);
-              std::cout << "    Extracted thumbnail: " << thumbnail_bytes << " bytes" << std::endl;
+              reader.get_resource(thumbnail_id, thumbnail_stream);
 
               thumbnail_stream.seekg(0);
               builder.add_resource(thumbnail_id, thumbnail_stream);
@@ -3775,18 +3772,15 @@ TEST_F(BuilderTest, ExtractIngredientsFromArchive) {
               ingredient["manifest_data"].is_object() &&
               ingredient["manifest_data"].contains("identifier")) {
               std::string manifest_data_id = ingredient["manifest_data"]["identifier"];
-              std::cout << "    Copying manifest_data: " << manifest_data_id << std::endl;
 
               std::stringstream manifest_data_stream(std::ios::in | std::ios::out | std::ios::binary);
-              size_t manifest_data_bytes = reader.get_resource(manifest_data_id, manifest_data_stream);
-              std::cout << "    Extracted manifest_data: " << manifest_data_bytes << " bytes" << std::endl;
+              reader.get_resource(manifest_data_id, manifest_data_stream);
 
               manifest_data_stream.seekg(0);
               builder.add_resource(manifest_data_id, manifest_data_stream);
           }
       }
 
-      std::cout << "Successfully transferred all ingredients" << std::endl;
       return builder;
   };
   auto manifest = c2pa_test::read_text_file(c2pa_test::get_fixture_path("training.json"));
@@ -3830,8 +3824,6 @@ TEST_F(BuilderTest, ExtractIngredientsFromArchive) {
   // Read and log the merged builder's manifest JSON
   auto merged_reader = c2pa::Reader(output_path);
   auto merged_json = merged_reader.json();
-  std::cout << "\n=== Merged Builder Manifest JSON ===" << std::endl;
-  std::cout << merged_json << std::endl;
 
   // Verify all 3 ingredients are present in the merged builder
   auto merged_parsed = json::parse(merged_json);
@@ -3910,7 +3902,6 @@ TEST_F(BuilderTest, ExtractIngredientsFromArchiveToBuilder) {
               std::string old_id = ingredient["thumbnail"]["identifier"].get<std::string>();
               std::string new_id = make_unique_id(old_id);
               if (new_id != old_id) {
-                  std::cout << "  Remapped thumbnail: " << old_id << " -> " << new_id << std::endl;
                   ingredient["thumbnail"]["identifier"] = new_id;
               }
               new_resource_copies.push_back({old_id, new_id});
@@ -3921,7 +3912,6 @@ TEST_F(BuilderTest, ExtractIngredientsFromArchiveToBuilder) {
               std::string old_id = ingredient["manifest_data"]["identifier"].get<std::string>();
               std::string new_id = make_unique_id(old_id);
               if (new_id != old_id) {
-                  std::cout << "  Remapped manifest_data: " << old_id << " -> " << new_id << std::endl;
                   ingredient["manifest_data"]["identifier"] = new_id;
               }
               new_resource_copies.push_back({old_id, new_id});
@@ -3947,7 +3937,6 @@ TEST_F(BuilderTest, ExtractIngredientsFromArchiveToBuilder) {
               builder_reader.get_resource(id, stream);
               stream.seekg(0);
               new_builder.add_resource(id, stream);
-              std::cout << "  Copied existing thumbnail: " << id << std::endl;
           }
           if (ingredient.contains("manifest_data") &&
               ingredient["manifest_data"].is_object() &&
@@ -3957,7 +3946,6 @@ TEST_F(BuilderTest, ExtractIngredientsFromArchiveToBuilder) {
               builder_reader.get_resource(id, stream);
               stream.seekg(0);
               new_builder.add_resource(id, stream);
-              std::cout << "  Copied existing manifest_data: " << id << std::endl;
           }
       }
 
@@ -3967,8 +3955,6 @@ TEST_F(BuilderTest, ExtractIngredientsFromArchiveToBuilder) {
           archive_reader.get_resource(rc.source_id, stream);
           stream.seekg(0);
           new_builder.add_resource(rc.dest_id, stream);
-          std::cout << "  Copied new resource: " << rc.source_id
-                    << (rc.source_id != rc.dest_id ? " -> " + rc.dest_id : "") << std::endl;
       }
 
       // Replace the original builder with the new one via move assignment
@@ -4025,6 +4011,184 @@ TEST_F(BuilderTest, ExtractIngredientsFromArchiveToBuilder) {
   ASSERT_FALSE(manifest_data.empty());
 
   // Read and log the merged builder's manifest JSON
+  auto merged_reader = c2pa::Reader(output_path);
+  auto merged_json = merged_reader.json();
+
+  // Verify all 3 ingredients are present from both archives
+  auto merged_parsed = json::parse(merged_json);
+  std::string merged_active = merged_parsed["active_manifest"];
+  auto merged_ingredients = merged_parsed["manifests"][merged_active]["ingredients"];
+  EXPECT_EQ(merged_ingredients.size(), 3) << "Merged builder should have all 3 ingredients from both archives";
+
+  // Reset settings
+  c2pa::load_settings(R"({"verify": {"verify_after_reading": true}})", "json");
+}
+
+TEST_F(BuilderTest, ExtractIngredientsFromArchives) {
+  // Helper that creates a builder from multiple archives, merging all their ingredients.
+  auto create_builder_with_ingredients_from_archives = [](
+      std::vector<std::reference_wrapper<std::istream>>& archive_streams,
+      const std::string& base_manifest_json) -> c2pa::Builder {
+
+      // Collect ingredients and their associated readers from all archives.
+      // Each entry pairs an ingredient JSON (possibly with remapped identifiers)
+      // with a pointer to the Reader it came from, so we can copy resources later.
+      struct IngredientSource {
+          json ingredient;          // ingredient JSON (with remapped IDs if needed)
+          std::string source_id;    // original resource ID in the archive (for thumbnail)
+          std::string dest_id;      // destination resource ID in the builder (possibly remapped)
+          std::string md_source_id; // original manifest_data ID (empty if none)
+          std::string md_dest_id;   // destination manifest_data ID (possibly remapped)
+      };
+
+      // Keep readers alive for the duration of resource copying
+      std::vector<std::unique_ptr<c2pa::Reader>> readers;
+      std::vector<std::vector<IngredientSource>> per_archive_sources;
+      json all_ingredients = json::array();
+
+      // Track used resource identifiers across all archives to avoid collisions
+      std::set<std::string> used_ids;
+      int suffix_counter = 0;
+
+      auto make_unique_id = [&](const std::string& original_id) -> std::string {
+          if (used_ids.find(original_id) == used_ids.end()) {
+              used_ids.insert(original_id);
+              return original_id;
+          }
+          std::string base = original_id;
+          auto pos = base.rfind("__");
+          if (pos != std::string::npos && pos + 2 < base.size()) {
+              bool all_digits = std::all_of(base.begin() + static_cast<long>(pos) + 2, base.end(), ::isdigit);
+              if (all_digits) base = base.substr(0, pos);
+          }
+          std::string new_id;
+          do {
+              new_id = base + "__" + std::to_string(suffix_counter++);
+          } while (used_ids.find(new_id) != used_ids.end());
+          used_ids.insert(new_id);
+          return new_id;
+      };
+
+      // Process each archive: extract ingredients, remap conflicting IDs
+      for (auto& stream_ref : archive_streams) {
+          auto reader = std::make_unique<c2pa::Reader>("application/c2pa", stream_ref.get());
+          auto parsed = json::parse(reader->json());
+          std::string active = parsed["active_manifest"];
+          auto ingredients = parsed["manifests"][active]["ingredients"];
+
+          std::vector<IngredientSource> sources;
+          for (auto& ingredient : ingredients) {
+              IngredientSource src;
+
+              // Remap thumbnail identifier if it conflicts
+              if (ingredient.contains("thumbnail") && ingredient["thumbnail"].contains("identifier")) {
+                  std::string old_id = ingredient["thumbnail"]["identifier"].get<std::string>();
+                  std::string new_id = make_unique_id(old_id);
+                  if (new_id != old_id) {
+                      ingredient["thumbnail"]["identifier"] = new_id;
+                  }
+                  src.source_id = old_id;
+                  src.dest_id = new_id;
+              }
+
+              // Remap manifest_data identifier if it conflicts
+              if (ingredient.contains("manifest_data") &&
+                  ingredient["manifest_data"].is_object() &&
+                  ingredient["manifest_data"].contains("identifier")) {
+                  std::string old_id = ingredient["manifest_data"]["identifier"].get<std::string>();
+                  std::string new_id = make_unique_id(old_id);
+                  if (new_id != old_id) {
+                      ingredient["manifest_data"]["identifier"] = new_id;
+                  }
+                  src.md_source_id = old_id;
+                  src.md_dest_id = new_id;
+              }
+
+              src.ingredient = ingredient;
+              all_ingredients.push_back(ingredient);
+              sources.push_back(std::move(src));
+          }
+
+          per_archive_sources.push_back(std::move(sources));
+          readers.push_back(std::move(reader));
+      }
+
+      // Create the builder with all ingredients injected into the manifest definition
+      json manifest_json = json::parse(base_manifest_json);
+      manifest_json["ingredients"] = all_ingredients;
+      c2pa::Builder builder(manifest_json.dump());
+
+      // Copy all resources from each archive into the builder
+      for (size_t a = 0; a < readers.size(); a++) {
+          for (const auto& src : per_archive_sources[a]) {
+              // Copy thumbnail
+              if (!src.source_id.empty()) {
+                  std::stringstream stream(std::ios::in | std::ios::out | std::ios::binary);
+                  readers[a]->get_resource(src.source_id, stream);
+                  stream.seekg(0);
+                  builder.add_resource(src.dest_id, stream);
+              }
+              // Copy manifest_data
+              if (!src.md_source_id.empty()) {
+                  std::stringstream stream(std::ios::in | std::ios::out | std::ios::binary);
+                  readers[a]->get_resource(src.md_source_id, stream);
+                  stream.seekg(0);
+                  builder.add_resource(src.md_dest_id, stream);
+              }
+          }
+      }
+
+      return builder;
+  };
+
+  auto manifest = c2pa_test::read_text_file(c2pa_test::get_fixture_path("training.json"));
+
+  // Archive 1: A.jpg and C.jpg
+  auto builder1 = c2pa::Builder(manifest);
+
+  std::string ingredient1_json = R"({"title": "A.jpg", "relationship": "parentOf"})";
+  builder1.add_ingredient(ingredient1_json, c2pa_test::get_fixture_path("A.jpg"));
+
+  std::string ingredient2_json = R"({"title": "C.jpg", "relationship": "componentOf"})";
+  builder1.add_ingredient(ingredient2_json, c2pa_test::get_fixture_path("C.jpg"));
+
+  std::stringstream archive1_stream(std::ios::in | std::ios::out | std::ios::binary);
+  EXPECT_NO_THROW({
+      builder1.to_archive(archive1_stream);
+  });
+
+  // Archive 2: sample1.gif
+  auto builder2 = c2pa::Builder(manifest);
+
+  std::string ingredient3_json = R"({"title": "sample.gif", "relationship": "componentOf"})";
+  builder2.add_ingredient(ingredient3_json, c2pa_test::get_fixture_path("sample1.gif"));
+
+  std::stringstream archive2_stream(std::ios::in | std::ios::out | std::ios::binary);
+  EXPECT_NO_THROW({
+      builder2.to_archive(archive2_stream);
+  });
+
+  // Skip verification since archives have placeholder signatures
+  c2pa::load_settings(R"({"verify": {"verify_after_reading": false}})", "json");
+
+  // Use the helper to create a builder from both archives at once
+  archive1_stream.seekg(0);
+  archive2_stream.seekg(0);
+  std::vector<std::reference_wrapper<std::istream>> archives = { archive1_stream, archive2_stream };
+  auto merged_builder = create_builder_with_ingredients_from_archives(archives, manifest);
+
+  // Sign the merged builder
+  auto signer = c2pa_test::create_test_signer();
+  auto source_path = c2pa_test::get_fixture_path("A.jpg");
+  auto output_path = get_temp_path("merged_from_archives.jpg");
+
+  std::vector<unsigned char> manifest_data;
+  EXPECT_NO_THROW({
+      manifest_data = merged_builder.sign(source_path, output_path, signer);
+  });
+  ASSERT_FALSE(manifest_data.empty());
+
+  // Read and verify the merged output
   auto merged_reader = c2pa::Reader(output_path);
   auto merged_json = merged_reader.json();
 
