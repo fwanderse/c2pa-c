@@ -184,11 +184,11 @@ int main()
     cout << "\n--- Example 4: Trust-based validation ---" << endl;
     try
     {
-        // Load trust configuration from TOML file
-        char *trust_settings = load_file("tests/fixtures/settings/test_settings_example.toml");
+        // Load trust configuration from config file
+        char *trust_settings = load_file("tests/fixtures/settings/test_settings_example.json");
 
         // Create a context with trust anchors
-        auto trusted_context = c2pa::Context::ContextBuilder().with_toml(trust_settings).create_context();
+        auto trusted_context = c2pa::Context::ContextBuilder().with_settings(c2pa::Settings(trust_settings, "json")).create_context();
         free(trust_settings);
 
         cout << "Created context with trust anchors" << endl;

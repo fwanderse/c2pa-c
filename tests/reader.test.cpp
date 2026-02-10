@@ -344,30 +344,6 @@ TEST_F(ReaderTest, StreamClosed)
     }, c2pa::C2paException);
 };
 
-TEST_F(ReaderTest, ReadManifestWithTrustConfiguredTomlSettings)
-{
-    fs::path current_dir = fs::path(__FILE__).parent_path();
-    fs::path signed_image_path = current_dir / "../tests/fixtures/for_trusted_read.jpg";
-
-    // Trust is based on a chain of trusted certificates. When signing, we may need to know
-    // if the ingredients are trusted at time of signing, so we benefit from having a context
-    // already configured with that trust to use with our Builder and Reader.
-    fs::path settings_path = current_dir / "../tests/fixtures/settings/test_settings_example.toml";
-    auto settings = c2pa_test::read_text_file(settings_path);
-    auto trusted_context = c2pa::Context::ContextBuilder().with_toml(settings).create_context();
-
-    // When reading, the Reader also needs to know about trust, to determine the manifest validation state
-    // If there is a valid trust chain, the manifest will be in validation_state Trusted.
-    auto reader = c2pa::Reader(trusted_context, signed_image_path);
-    std::string read_json_manifest;
-    ASSERT_NO_THROW(read_json_manifest = reader.json());
-    ASSERT_FALSE(read_json_manifest.empty());
-
-    json parsed_manifest_json = json::parse(read_json_manifest);
-
-    ASSERT_TRUE(parsed_manifest_json["validation_state"] == "Trusted");
-}
-
 TEST_F(ReaderTest, ReadManifestWithTrustConfiguredJsonSettings)
 {
     fs::path current_dir = fs::path(__FILE__).parent_path();
