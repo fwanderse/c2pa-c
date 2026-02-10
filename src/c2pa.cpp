@@ -282,23 +282,19 @@ inline std::string c_string_to_string(T* c_result) {
     return str;
 }
 
-/// @brief Convert C byte array result to C++ vector with cleanup
+/// @brief Convert C byte array result to C++ vector
 /// @param data Raw byte array from C API
 /// @param size Size of the byte array (result from C API call)
 /// @return Vector containing the bytes (throws if null or negative size)
-/// @details This helper extracts the common pattern of checking C API results,
+/// @details This helper extracts the pattern of checking C API results,
 ///          copying to a vector, and freeing the C-allocated memory.
 ///          The C API contract is: if result < 0 or data == nullptr, the operation failed.
 inline std::vector<unsigned char> to_byte_vector(const unsigned char* data, int64_t size) {
-    // Check for error conditions and free only if data is not null
-    if (size < 0) {
+    if (size < 0 || data == nullptr) {
         safe_c2pa_free(data);  // May be null or allocated, safe_c2pa_free handles both
         throw C2paException();
     }
-    if (data == nullptr) {
-        throw C2paException();  // Null pointer, nothing to free
-    }
-    // Success path: copy data and free the C-allocated memory
+
     auto result = std::vector<unsigned char>(data, data + size);
     safe_c2pa_free(data);
     return result;
