@@ -107,6 +107,29 @@ namespace c2pa
     ///          custom context implementations (e.g. AdobeContext wrappers).
     ///          Copy is deleted; move is defaulted.
     ///
+    /// @par Implementation Requirements for has_context()
+    /// The has_context() method exists to support implementations that may have:
+    /// - Optional or lazy context initialization
+    /// - Contexts that can be invalidated or moved
+    /// - A "no context" state as part of their lifecycle
+    ///
+    /// @par Why Both c_context() and has_context()?
+    /// While c_context() can return nullptr, has_context() provides:
+    /// 1. A clear boolean check without pointer inspection (yes/no answer)
+    /// 2. Forward compatibility for implementations with complex context lifecycles
+    ///
+    /// @par Impact on Reader and Builder
+    /// Reader and Builder constructors validate that a provider both exists and
+    /// has_context() returns true before using c_context(). This ensures that:
+    /// - External implementations cannot be used in an uninitialized state
+    /// - A consistent validation pattern exists across all context-using classes
+    /// - Errors are caught early at construction time rather than during operations
+    ///
+    /// @par Standard Context Implementation
+    /// The built-in Context class always returns true from has_context() after
+    /// successful construction, as it validates the context pointer in its constructor.
+    /// External implementations may have different invariants.
+    ///
     /// Example external implementation:
     /// @code
     /// class MyContext : public c2pa::IContextProvider {
@@ -128,6 +151,10 @@ namespace c2pa
 
         /// @brief Check if this provider has a valid context.
         /// @return true if context is available, false otherwise.
+        /// @note For standard Context objects, this always returns true after construction.
+        ///       External implementations may return false to indicate uninitialized or
+        ///       invalidated state. Reader and Builder constructors check this before use.
+        /// @warning Implementations must ensure has_context() == true implies c_context() != nullptr.
         [[nodiscard]] virtual bool has_context() const noexcept = 0;
 
     protected:
@@ -194,8 +221,8 @@ namespace c2pa
         C2paSettings* settings_;
     };
 
-    /// @brief Immutable C2PA context implementing IContextProvider.
-    /// @details Context objects are immutable after construction.
+    /// @brief C2PA context implementing IContextProvider.
+    /// @details Context objects manage C2PA SDK configuration and state.
     ///          Use factory methods for simple creation:
     ///          - Context::create() for default settings
     ///          - Context::from_json() for JSON configuration
@@ -204,7 +231,7 @@ namespace c2pa
     public:
         /// @brief ContextBuilder for creating customized Context instances.
         /// @details Provides a builder pattern for configuring contexts with multiple settings.
-        ///          Note: create_context() consumes the builder (due to C API design).
+        ///          Note: create_context() consumes the builder.
         /// @note For most use cases, prefer the simpler factory methods:
         ///       Context::from_json() or Context::from_settings().
         class C2PA_CPP_API ContextBuilder {
@@ -272,7 +299,16 @@ namespace c2pa
         ~Context() noexcept override;
 
         // IContextProvider implementation
+        /// @brief Get the underlying C2PA context pointer.
+        /// @return Non-null C2paContext pointer (validated at construction).
         [[nodiscard]] C2paContext* c_context() const noexcept override;
+
+        /// @brief Check if this Context has a valid context.
+        /// @return Always returns true for successfully constructed Context objects.
+        /// @note The Context constructor validates that the context pointer is non-null,
+        ///       so this method always returns true for any Context instance that exists.
+        ///       This method exists to fulfill the IContextProvider contract and support
+        ///       external implementations that may have different lifecycle requirements.
         [[nodiscard]] bool has_context() const noexcept override;
 
         /// @brief Internal constructor (use static factory methods instead).
@@ -445,13 +481,21 @@ namespace c2pa
         /// @param context Context provider to use for this reader.
         /// @param format The mime format of the stream.
         /// @param stream The input stream to read from.
-        /// @throws C2pa::C2paException for errors encountered by the C2PA library.
+        /// @throws C2pa::C2paException if context is null, context->has_context() returns false,
+        ///         or for other errors encountered by the C2PA library.
+        /// @note The constructor validates both that the context pointer is non-null AND that
+        ///       has_context() returns true before using c_context(). This ensures external
+        ///       IContextProvider implementations are in a valid state.
         Reader(std::shared_ptr<IContextProvider> context, const std::string &format, std::istream &stream);
 
         /// @brief Create a Reader from a context and file path.
         /// @param context Context provider to use for this reader.
         /// @param source_path the path to the file to read.
-        /// @throws C2pa::C2paException for errors encountered by the C2PA library.
+        /// @throws C2pa::C2paException if context is null, context->has_context() returns false,
+        ///         or for other errors encountered by the C2PA library.
+        /// @note The constructor validates both that the context pointer is non-null AND that
+        ///       has_context() returns true before using c_context(). This ensures external
+        ///       IContextProvider implementations are in a valid state.
         /// @note Prefer using the streaming APIs if possible
         Reader(std::shared_ptr<IContextProvider> context, const std::filesystem::path &source_path);
 
@@ -622,13 +666,21 @@ namespace c2pa
     public:
         /// @brief Create a Builder from a context with an empty manifest.
         /// @param context Context provider to use for this builder.
-        /// @throws C2pa::C2paException for errors encountered by the C2PA library.
+        /// @throws C2pa::C2paException if context is null, context->has_context() returns false,
+        ///         or for other errors encountered by the C2PA library.
+        /// @note The constructor validates both that the context pointer is non-null AND that
+        ///       has_context() returns true before using c_context(). This ensures external
+        ///       IContextProvider implementations are in a valid state.
         explicit Builder(std::shared_ptr<IContextProvider> context);
 
         /// @brief Create a Builder from a context and manifest JSON string.
         /// @param context Context provider to use for this builder.
         /// @param manifest_json The manifest JSON string.
-        /// @throws C2pa::C2paException for errors encountered by the C2PA library.
+        /// @throws C2pa::C2paException if context is null, context->has_context() returns false,
+        ///         or for other errors encountered by the C2PA library.
+        /// @note The constructor validates both that the context pointer is non-null AND that
+        ///       has_context() returns true before using c_context(). This ensures external
+        ///       IContextProvider implementations are in a valid state.
         Builder(std::shared_ptr<IContextProvider> context, const std::string &manifest_json);
 
         /// @brief Create a Builder from a manifest JSON std::string (will use global settings if any loaded).
@@ -718,7 +770,7 @@ namespace c2pa
         /// @note Prefer using the streaming APIs if possible
         void add_ingredient(const std::string &ingredient_json, const std::filesystem::path &source_path);
 
-        /// @brief Add an archive (working store) as an ingredient to the builder.
+        /// @brief Add an archive as an ingredient to the builder.
         /// @param ingredient_json  Any fields of the ingredient you want to define (e.g. title, relationship).
         /// @param archive The input stream to read the archive from.
         /// @throws C2pa::C2paException for errors encountered by the C2PA library.

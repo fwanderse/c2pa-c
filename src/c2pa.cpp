@@ -259,16 +259,6 @@ inline std::string extract_file_extension(const std::filesystem::path &path) noe
     return ext.empty() ? "" : ext.substr(1);
 }
 
-/// @brief Only call C API free when pointer is non-null.
-inline void safe_c2pa_free(void* p) {
-    if (p != nullptr)
-        c2pa_free(p);
-}
-inline void safe_c2pa_free(const void* p) {
-    if (p != nullptr)
-        c2pa_free(const_cast<void*>(p));
-}
-
 /// @brief Convert C string result to C++ string with cleanup
 /// @param c_result Raw C string from C API
 /// @return C++ string (throws if null)
@@ -278,7 +268,7 @@ inline std::string c_string_to_string(T* c_result) {
         throw C2paException();
     }
     std::string str(c_result);
-    safe_c2pa_free(c_result);
+    c2pa_free(c_result);
     return str;
 }
 
@@ -291,12 +281,12 @@ inline std::string c_string_to_string(T* c_result) {
 ///          The C API contract is: if result < 0 or data == nullptr, the operation failed.
 inline std::vector<unsigned char> to_byte_vector(const unsigned char* data, int64_t size) {
     if (size < 0 || data == nullptr) {
-        safe_c2pa_free(data);  // May be null or allocated, safe_c2pa_free handles both
+        c2pa_free(data);  // May be null or allocated, c2pa_free handles both
         throw C2paException();
     }
 
     auto result = std::vector<unsigned char>(data, data + size);
-    safe_c2pa_free(data);
+    c2pa_free(data);
     return result;
 }
 
@@ -309,7 +299,7 @@ inline std::vector<unsigned char> to_byte_vector(const unsigned char* data, int6
     {
         auto result = c2pa_error();
         message_ = result ? std::string(result) : std::string();
-        detail::safe_c2pa_free(result);
+        c2pa_free(result);
     }
 
     C2paException::C2paException(std::string message) : message_(std::move(message))
@@ -334,7 +324,7 @@ inline std::vector<unsigned char> to_byte_vector(const unsigned char* data, int6
             throw C2paException("Failed to create settings");
         }
         if (c2pa_settings_update_from_string(settings_, data.c_str(), format.c_str()) != 0) {
-            detail::safe_c2pa_free(settings_);
+            c2pa_free(settings_);
             throw C2paException();
         }
     }
@@ -346,7 +336,7 @@ inline std::vector<unsigned char> to_byte_vector(const unsigned char* data, int6
     Settings& Settings::operator=(Settings&& other) noexcept {
         if (this != &other) {
             if (settings_) {
-                detail::safe_c2pa_free(settings_);
+                c2pa_free(settings_);
             }
             settings_ = std::exchange(other.settings_, nullptr);
         }
@@ -355,7 +345,7 @@ inline std::vector<unsigned char> to_byte_vector(const unsigned char* data, int6
 
     Settings::~Settings() noexcept {
         if (settings_) {
-            detail::safe_c2pa_free(settings_);
+            c2pa_free(settings_);
         }
     }
 
@@ -387,7 +377,7 @@ inline std::vector<unsigned char> to_byte_vector(const unsigned char* data, int6
 
     Context::~Context() noexcept {
         if (context) {
-            detail::safe_c2pa_free(context);
+            c2pa_free(context);
         }
     }
 
@@ -413,7 +403,7 @@ inline std::vector<unsigned char> to_byte_vector(const unsigned char* data, int6
             throw C2paException("Failed to create context builder");
         }
         if (c2pa_context_builder_set_settings(builder, settings.c_settings()) != 0) {
-            detail::safe_c2pa_free(builder);
+            c2pa_free(builder);
             throw C2paException();
         }
         C2paContext* ctx = c2pa_context_builder_build(builder);
@@ -442,7 +432,7 @@ inline std::vector<unsigned char> to_byte_vector(const unsigned char* data, int6
     Context::ContextBuilder& Context::ContextBuilder::operator=(ContextBuilder&& other) noexcept {
         if (this != &other) {
             if (context_builder) {
-                detail::safe_c2pa_free(context_builder);
+                c2pa_free(context_builder);
             }
             context_builder = std::exchange(other.context_builder, nullptr);
         }
@@ -451,7 +441,7 @@ inline std::vector<unsigned char> to_byte_vector(const unsigned char* data, int6
 
     Context::ContextBuilder::~ContextBuilder() noexcept {
         if (context_builder) {
-            detail::safe_c2pa_free(context_builder);
+            c2pa_free(context_builder);
         }
     }
 
@@ -540,7 +530,7 @@ inline std::vector<unsigned char> to_byte_vector(const unsigned char* data, int6
             throw c2pa::C2paException();
         }
         std::string str(result);
-        detail::safe_c2pa_free(result);
+        c2pa_free(result);
         return str;
     }
 
@@ -578,7 +568,7 @@ inline std::vector<unsigned char> to_byte_vector(const unsigned char* data, int6
         {
             throw c2pa::C2paException();
         }
-        detail::safe_c2pa_free(result);
+        c2pa_free(result);
     }
 
     /// IStream Class wrapper for C2paStream.
@@ -707,7 +697,7 @@ inline std::vector<unsigned char> to_byte_vector(const unsigned char* data, int6
         // Create owned stream that will live as long as the Reader
         owned_stream = std::make_unique<std::ifstream>(source_path, std::ios::binary);
         if (!owned_stream->is_open()) {
-            detail::safe_c2pa_free(c2pa_reader);
+            c2pa_free(c2pa_reader);
             throw std::system_error(errno, std::system_category(), "Failed to open file: " + source_path.string());
         }
 
@@ -757,7 +747,7 @@ inline std::vector<unsigned char> to_byte_vector(const unsigned char* data, int6
 
     Reader::~Reader()
     {
-        detail::safe_c2pa_free(c2pa_reader);
+        c2pa_free(c2pa_reader);
         // cpp_stream and owned_stream are automatically cleaned up by unique_ptr
     }
 
@@ -776,7 +766,7 @@ inline std::vector<unsigned char> to_byte_vector(const unsigned char* data, int6
         //
         // TODO: Revisit after determining how we want c2pa-rs to handle
         //       strings that shouldn't be modified by our bindings.
-        detail::safe_c2pa_free(url);
+        c2pa_free(url);
         return url_str;
     }
 
@@ -827,7 +817,7 @@ inline std::vector<unsigned char> to_byte_vector(const unsigned char* data, int6
 
     Signer::~Signer()
     {
-        detail::safe_c2pa_free(signer);
+        c2pa_free(signer);
     }
 
     /// @brief  Get the C2paSigner
@@ -907,7 +897,7 @@ inline std::vector<unsigned char> to_byte_vector(const unsigned char* data, int6
 
     Builder::~Builder()
     {
-        detail::safe_c2pa_free(builder);
+        c2pa_free(builder);
     }
 
     C2paBuilder *Builder::c2pa_builder() const noexcept
