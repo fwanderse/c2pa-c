@@ -871,72 +871,6 @@ TEST_F(BuilderTest, SignImageFileNoThumbnailAutoGen)
     EXPECT_TRUE(parsed_no_context["manifests"][active_manifest_value_no_context].contains("thumbnail"));
 };
 
-TEST_F(BuilderTest, SignImageThumbnailSettingsFileToml)
-{
-    fs::path current_dir = fs::path(__FILE__).parent_path();
-
-    // Construct the paths relative to the current directory
-    fs::path manifest_path = current_dir / "../tests/fixtures/training.json";
-    fs::path certs_path = current_dir / "../tests/fixtures/es256_certs.pem";
-    fs::path signed_image_path = current_dir / "../tests/fixtures/A.jpg";
-    fs::path output_path_with_context = get_temp_path("image_context_settings_toml.jpg");
-    fs::path output_path_no_context = get_temp_path("image_no_context_toml.jpg");
-
-    auto manifest = c2pa_test::read_text_file(manifest_path);
-    auto certs = c2pa_test::read_text_file(certs_path);
-    auto p_key = c2pa_test::read_text_file(current_dir / "../tests/fixtures/es256_private.key");
-
-    // Create a signer
-    c2pa::Signer signer = c2pa::Signer("Es256", certs, p_key, "http://timestamp.digicert.com");
-
-    // Create context with specific settings via toml, by loading the TOML file
-    fs::path settings_path = current_dir / "../tests/fixtures/settings/test_settings_no_thumbnail.toml";
-    auto settings_toml = c2pa_test::read_text_file(settings_path);
-    auto context = c2pa::Context::from_toml(settings_toml);
-
-    // Create builder using context containing settings (does not generate thumbnails)
-    auto builder_no_thumbnail = c2pa::Builder(context, manifest);
-    std::vector<unsigned char> manifest_data_no_thumbnail;
-    ASSERT_NO_THROW(manifest_data_no_thumbnail = builder_no_thumbnail.sign(signed_image_path, output_path_with_context, signer));
-
-    // Verify the signed file with context exists and is readable
-    ASSERT_TRUE(std::filesystem::exists(output_path_with_context));
-    auto reader_without_thumbnails = c2pa::Reader(output_path_with_context);
-    std::string json_without_thumbnails;
-    ASSERT_NO_THROW(json_without_thumbnails = reader_without_thumbnails.json());
-    EXPECT_FALSE(json_without_thumbnails.empty());
-
-    // Now, create builder with another context (settings generate a thumbnail)
-    fs::path settings_path2 = current_dir / "../tests/fixtures/settings/test_settings_with_thumbnail.toml";
-    auto settings_toml2 = c2pa_test::read_text_file(settings_path2);
-    auto context2 = c2pa::Context::from_toml(settings_toml2);
-
-    auto builder_with_thumbnail = c2pa::Builder(context2, manifest);
-    std::vector<unsigned char> manifest_data_with_thumbnail;
-    ASSERT_NO_THROW(manifest_data_with_thumbnail = builder_with_thumbnail.sign(signed_image_path, output_path_no_context, signer));
-
-    // Verify the signed file without context exists and is readable
-    ASSERT_TRUE(std::filesystem::exists(output_path_no_context));
-    auto reader_with_thumbnails = c2pa::Reader(output_path_no_context);
-    std::string json_with_thumbnails;
-    ASSERT_NO_THROW(json_with_thumbnails = reader_with_thumbnails.json());
-    EXPECT_FALSE(json_with_thumbnails.empty());
-
-    // Both builders should successfully create valid manifests,
-    // but one should have thumbnails whereas the other shouldn't
-    json parsed_no_thumbnail = json::parse(json_without_thumbnails);
-    json parsed_with_thumbnail = json::parse(json_with_thumbnails);
-
-    // Both should have valid structure
-    EXPECT_TRUE(parsed_no_thumbnail.contains("active_manifest"));
-    EXPECT_TRUE(parsed_with_thumbnail.contains("active_manifest"));
-
-    std::string active_manifest_value_context = parsed_no_thumbnail["active_manifest"];
-    EXPECT_FALSE(parsed_no_thumbnail["manifests"][active_manifest_value_context].contains("thumbnail"));
-    std::string active_manifest_value_no_context = parsed_with_thumbnail["active_manifest"];
-    EXPECT_TRUE(parsed_with_thumbnail["manifests"][active_manifest_value_no_context].contains("thumbnail"));
-};
-
 TEST_F(BuilderTest, SignImageThumbnailSettingsFileJson)
 {
     fs::path current_dir = fs::path(__FILE__).parent_path();
@@ -1078,7 +1012,7 @@ TEST_F(BuilderTest, SignImageThumbnailSettingsIncrementalObject)
             }
         }
     })";
-    settings.update(updated_config, c2pa::ConfigFormat::JSON);
+    settings.update(updated_config, "json");
 
     // Build context from Settings object we just did
     auto context = c2pa::Context::ContextBuilder()
@@ -2810,9 +2744,9 @@ TEST_F(BuilderTest, TrustHandling)
     // Trust is based on a chain of trusted certificates. When signing, we may need to know
     // if the ingredients are trusted at time of signing, so we benefit from having a context
     // already configured with that trust to use with our Builder and Reader.
-    fs::path settings_path = current_dir / "../tests/fixtures/settings/test_settings_example.toml";
+    fs::path settings_path = current_dir / "../tests/fixtures/settings/test_settings_example.json";
     auto settings = c2pa_test::read_text_file(settings_path);
-    auto trusted_context = c2pa::Context::from_toml(settings);
+    auto trusted_context = c2pa::Context::ContextBuilder().with_settings(c2pa::Settings(settings, "json")).create_context();
 
     // Create builder using context containing settings that does generate thumbnails
     auto builder = c2pa::Builder(trusted_context, manifest);
@@ -3257,7 +3191,7 @@ TEST_F(BuilderTest, MultipleArchivesAsIngredients)
         << "Third ingredient should have componentOf relationship";
 }
 
-// Test add_ingredient_from_binary_archive with stream overload
+// Test from_ingredient_archive with stream overload
 TEST_F(BuilderTest, AddIngredientFromArchiveStream)
 {
     auto manifest = c2pa_test::read_text_file(c2pa_test::get_fixture_path("training.json"));
@@ -3281,7 +3215,7 @@ TEST_F(BuilderTest, AddIngredientFromArchiveStream)
     std::string ingredient_json = R"({"title": "Archive Ingredient", "relationship": "parentOf"})";
 
     EXPECT_NO_THROW({
-        final_builder.add_ingredient_from_binary_archive(ingredient_json, archive_stream);
+        final_builder.from_ingredient_archive(ingredient_json, archive_stream);
     });
 
     // Reset settings
@@ -3312,7 +3246,7 @@ TEST_F(BuilderTest, AddIngredientFromArchiveStream)
     EXPECT_EQ(ingredients[0]["relationship"], "parentOf");
 }
 
-// Test add_ingredient_from_binary_archive with file overload
+// Test from_ingredient_archive with file overload
 TEST_F(BuilderTest, AddIngredientFromArchiveFile)
 {
     auto manifest = c2pa_test::read_text_file(c2pa_test::get_fixture_path("training.json"));
@@ -3335,7 +3269,7 @@ TEST_F(BuilderTest, AddIngredientFromArchiveFile)
     std::string ingredient_json = R"({"title": "File Archive Ingredient", "relationship": "componentOf"})";
 
     EXPECT_NO_THROW({
-        final_builder.add_ingredient_from_binary_archive(ingredient_json, archive_path);
+        final_builder.from_ingredient_archive(ingredient_json, archive_path);
     });
 
     // Reset settings
@@ -3364,7 +3298,7 @@ TEST_F(BuilderTest, AddIngredientFromArchiveFile)
     EXPECT_EQ(ingredients[0]["relationship"], "componentOf");
 }
 
-// Test add_ingredient_from_binary_archive with multiple archives
+// Test from_ingredient_archive with multiple archives
 TEST_F(BuilderTest, AddMultipleArchivesFromArchive)
 {
     auto manifest = c2pa_test::read_text_file(c2pa_test::get_fixture_path("training.json"));
@@ -3405,19 +3339,19 @@ TEST_F(BuilderTest, AddMultipleArchivesFromArchive)
     archive1_stream.seekg(0);
     std::string ingredient1_json = R"({"title": "Archive 1 New API", "relationship": "parentOf"})";
     EXPECT_NO_THROW({
-        final_builder.add_ingredient_from_binary_archive(ingredient1_json, archive1_stream);
+        final_builder.from_ingredient_archive(ingredient1_json, archive1_stream);
     });
 
     archive2_stream.seekg(0);
     std::string ingredient2_json = R"({"title": "Archive 2 New API", "relationship": "componentOf"})";
     EXPECT_NO_THROW({
-        final_builder.add_ingredient_from_binary_archive(ingredient2_json, archive2_stream);
+        final_builder.from_ingredient_archive(ingredient2_json, archive2_stream);
     });
 
     archive3_stream.seekg(0);
     std::string ingredient3_json = R"({"title": "Archive 3 New API", "relationship": "componentOf"})";
     EXPECT_NO_THROW({
-        final_builder.add_ingredient_from_binary_archive(ingredient3_json, archive3_stream);
+        final_builder.from_ingredient_archive(ingredient3_json, archive3_stream);
     });
 
     // Reset settings
@@ -3460,7 +3394,7 @@ TEST_F(BuilderTest, AddMultipleArchivesFromArchive)
         << "Third ingredient should have componentOf relationship";
 }
 
-// Test add_ingredient_from_binary_archive with invalid archive
+// Test from_ingredient_archive with invalid archive
 TEST_F(BuilderTest, AddIngredientFromArchiveInvalidStream)
 {
     auto manifest = c2pa_test::read_text_file(c2pa_test::get_fixture_path("training.json"));
@@ -3475,7 +3409,7 @@ TEST_F(BuilderTest, AddIngredientFromArchiveInvalidStream)
 
     // Should throw C2paException when trying to add invalid archive
     EXPECT_THROW({
-        builder.add_ingredient_from_binary_archive(ingredient_json, invalid_stream);
+        builder.from_ingredient_archive(ingredient_json, invalid_stream);
     }, c2pa::C2paException);
 }
 

@@ -259,7 +259,7 @@ inline std::string extract_file_extension(const std::filesystem::path &path) noe
     return ext.empty() ? "" : ext.substr(1);
 }
 
-/// @brief Only call C API free when pointer is non-null (FFI can panic on null).
+/// @brief Only call C API free when pointer is non-null.
 inline void safe_c2pa_free(void* p) {
     if (p != nullptr)
         c2pa_free(p);
@@ -411,10 +411,6 @@ inline std::vector<unsigned char> to_byte_vector(const unsigned char* data, int6
         return ContextBuilder().with_json(json).create_context();
     }
 
-    std::shared_ptr<IContextProvider> Context::from_toml(const std::string& toml) {
-        return ContextBuilder().with_toml(toml).create_context();
-    }
-
     // Context::ContextBuilder
 
     Context::ContextBuilder::ContextBuilder() : context_builder(c2pa_context_builder_new()) {
@@ -461,14 +457,7 @@ inline std::vector<unsigned char> to_byte_vector(const unsigned char* data, int6
         if (!is_valid()) {
             throw C2paException("ContextBuilder is invalid (already consumed)");
         }
-        return with_settings(Settings(json, ConfigFormat::JSON));
-    }
-
-    Context::ContextBuilder& Context::ContextBuilder::with_toml(const std::string& toml) {
-        if (!is_valid()) {
-            throw C2paException("ContextBuilder is invalid (already consumed)");
-        }
-        return with_settings(Settings(toml, ConfigFormat::TOML));
+        return with_settings(Settings(json, "json"));
     }
 
     std::shared_ptr<IContextProvider> Context::ContextBuilder::create_context() {
@@ -975,15 +964,15 @@ inline std::vector<unsigned char> to_byte_vector(const unsigned char* data, int6
         add_ingredient(ingredient_json, format.c_str(), *stream);
     }
 
-    void Builder::add_ingredient_from_binary_archive(const std::string &ingredient_json, std::istream &archive)
+    void Builder::from_ingredient_archive(const std::string &ingredient_json, std::istream &archive)
     {
         add_ingredient(ingredient_json, C2paMimeType::BinaryArchive, archive);
     }
 
-    void Builder::add_ingredient_from_binary_archive(const std::string &ingredient_json, const std::filesystem::path &archive_path)
+    void Builder::from_ingredient_archive(const std::string &ingredient_json, const std::filesystem::path &archive_path)
     {
         auto stream = detail::open_file_binary<std::ifstream>(archive_path);
-        add_ingredient_from_binary_archive(ingredient_json, *stream);
+        from_ingredient_archive(ingredient_json, *stream);
     }
 
     void Builder::add_action(const std::string &action_json)

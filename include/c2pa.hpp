@@ -80,23 +80,6 @@ namespace c2pa
         constexpr const char* BinaryArchive = "application/c2pa";
     }
 
-    /// @brief Enum for settings/configuration format
-    enum class ConfigFormat {
-        JSON,
-        TOML
-    };
-
-    /// @brief Helper to convert enum to string format
-    /// @param format ConfigFormat enum value
-    /// @return Format as string, defaults to json
-    inline const char* config_format_to_string(ConfigFormat format) noexcept {
-        switch(format) {
-            case ConfigFormat::JSON: return "json";
-            case ConfigFormat::TOML: return "toml";
-            default: return "json";
-        }
-    }
-
     /// C2paException class for C2pa errors.
     /// This class is used to throw exceptions for errors encountered by the C2pa library via c2pa_error().
     class C2PA_CPP_API C2paException : public std::exception
@@ -157,7 +140,7 @@ namespace c2pa
     };
 
     /// @brief (C2PA SDK) Settings configuration object for creating contexts.
-    /// @details Settings can be configured via JSON/TOML strings or programmatically
+    /// @details Settings can be configured via JSON strings or programmatically
     ///          via set() and update() methods. Once passed to Context::ContextBuilder,
     ///          the settings are copied into the context and the Settings
     ///          object can be reused or discarded.
@@ -167,17 +150,10 @@ namespace c2pa
         Settings();
 
         /// @brief Create settings from a configuration string.
-        /// @param data Configuration data in JSON or TOML format.
-        /// @param format Format of the data ("json" or "toml").
+        /// @param data Configuration data in JSON format.
+        /// @param format Format of the data ("json").
         /// @throws C2paException if parsing fails.
         Settings(const std::string& data, const std::string& format);
-
-        /// @brief Create settings from a configuration string.
-        /// @param data Configuration data in ConfigFormat format.
-        /// @param format Format of the data from `ConfigFormat` enum.
-        /// @throws C2paException if parsing fails.
-        Settings(const std::string& data, ConfigFormat format)
-            : Settings(data, config_format_to_string(format)) {}
 
         // Move semantics
         Settings(Settings&&) noexcept;
@@ -196,21 +172,19 @@ namespace c2pa
         /// @throws C2paException if the path or value is invalid.
         Settings& set(const std::string& path, const std::string& json_value);
 
+        /// @brief Merge configuration from a JSON string (latest configuration wins).
+        /// @param data Configuration data in JSON format.
+        /// @return Reference to this Settings for method chaining.
+        /// @throws C2paException if parsing fails.
+        /// @note This is the recommended overload when configuration is JSON.
+        Settings& update(const std::string& data) { return update(data, "json"); }
+
         /// @brief Merge configuration from a std::string (latest configuration wins).
         /// @param data Configuration data in JSON or TOML format.
         /// @param format Format of the data ("json" or "toml").
         /// @return Reference to this Settings for method chaining.
         /// @throws C2paException if parsing fails.
         Settings& update(const std::string& data, const std::string& format);
-
-        /// @brief Merge configuration from a std::string (latest configuration wins).
-        /// @param data Configuration data in ConfigFormat format.
-        /// @param format Format of the data as `ConfigFormat` enum.
-        /// @return Reference to this Settings for method chaining.
-        /// @throws C2paException if parsing fails.
-        Settings& update(const std::string& data, ConfigFormat format) {
-            return update(data, config_format_to_string(format));
-        }
 
         /// @brief Get the raw C FFI settings pointer.
         /// @return Pointer to C2paSettings, or nullptr if not initialized.
@@ -259,12 +233,6 @@ namespace c2pa
             /// @throws C2paException if builder is invalid or JSON is invalid.
             ContextBuilder& with_json(const std::string& json);
 
-            /// @brief Configure settings with TOML string.
-            /// @param toml TOML configuration string.
-            /// @return Reference to this ContextBuilder for method chaining.
-            /// @throws C2paException if builder is invalid or TOML is invalid.
-            ContextBuilder& with_toml(const std::string& toml);
-
             /// @brief Create the immutable Context (consuming build operation).
             /// @return Shared pointer to the new Context.
             /// @throws C2paException if context creation fails or builder is invalid.
@@ -286,12 +254,6 @@ namespace c2pa
         /// @return Shared pointer to the new Context.
         /// @throws C2paException if JSON is invalid or context creation fails.
         [[nodiscard]] static std::shared_ptr<IContextProvider> from_json(const std::string& json);
-
-        /// @brief Create a Context from TOML configuration (settings).
-        /// @param toml TOML configuration string.
-        /// @return Shared pointer to the new Context.
-        /// @throws C2paException if TOML is invalid or context creation fails.
-        [[nodiscard]] static std::shared_ptr<IContextProvider> from_toml(const std::string& toml);
 
         // Non-copyable, non-moveable
         Context(const Context&) = delete;
@@ -321,8 +283,8 @@ namespace c2pa
     /// @param data the std::string to load.
     /// @param format the mime format of the string.
     /// @throws a C2pa::C2paException for errors encountered by the C2PA library.
-    /// @deprecated Use Context::from_json() or Context::from_toml() instead for better thread safety.
-    [[deprecated("Use Context pattern instead, Context::from_json() or Context::from_toml() instead")]]
+    /// @deprecated Use Context::from_json() or Context::ContextBuilder().with_json().create_context() instead for better thread safety.
+    [[deprecated("Use Context pattern instead, Context::from_json() or Context::ContextBuilder().with_json().create_context() instead")]]
     void C2PA_CPP_API load_settings(const std::string& data, const std::string& format);
 
     /// Reads a file and returns the manifest json as a C2pa::String.
@@ -752,14 +714,14 @@ namespace c2pa
         /// @param ingredient_json  Any fields of the ingredient you want to define (e.g. title, relationship).
         /// @param archive The input stream to read the archive from.
         /// @throws C2pa::C2paException for errors encountered by the C2PA library.
-        void add_ingredient_from_binary_archive(const std::string &ingredient_json, std::istream &archive);
+        void from_ingredient_archive(const std::string &ingredient_json, std::istream &archive);
 
         /// @brief Add an archive (working store) as an ingredient to the builder.
         /// @param ingredient_json  Any fields of the ingredient you want to define (e.g. title, relationship).
         /// @param archive_path The path to the archive file.
         /// @throws C2pa::C2paException for errors encountered by the C2PA library.
         /// @note Prefer using the streaming APIs if possible
-        void add_ingredient_from_binary_archive(const std::string &ingredient_json, const std::filesystem::path &archive_path);
+        void from_ingredient_archive(const std::string &ingredient_json, const std::filesystem::path &archive_path);
 
         /// @brief Add an action to the manifest the Builder is constructing.
         /// @param action_json JSON std::string containing the action data.

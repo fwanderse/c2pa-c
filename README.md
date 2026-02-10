@@ -41,7 +41,7 @@ This will automatically fetch, build, and link the `c2pa_cpp` library and its de
 
 ### Example usage
 
-See the [`examples/`](examples/) directory for sample applications that demonstrate how to use the library in practice.  
+See the [`examples/`](examples/) directory for sample applications that demonstrate how to use the library in practice.
 
 ## Development
 
@@ -49,7 +49,7 @@ This project has been tested on macOS and should also work on common Linux distr
 
 You must install the [Ninja](https://github.com/ninja-build/ninja/wiki/Pre-built-Ninja-packages) build system to run the unit tests.
 
-### Building using pre-build C FFI libraries
+### Building using pre-built C FFI libraries
 
 Building the library holding the C++ SDK requires [GNU make](https://www.gnu.org/software/make/), which is installed on most macOS systems.
 
@@ -72,7 +72,7 @@ Results are saved in the `build` directory.
 
 This project can also be built entirely from source (without pre-built library download), with the pre-requisite that you will also need [c2pa-rs](https://github.com/contentauth/c2pa-rs) on the local machine, as well as the [Rust toolchain](https://rust-lang.org/tools/install/).
 
-To build in this case, the build scripts need to be able to locate the `c2pa-rs` sources as well as the librari this builds for linking. This is done by setting environment variables in the terminal where the builds will run.
+To build in this case, the build scripts need to be able to locate the `c2pa-rs` sources as well as the library this builds for linking. This is done by setting environment variables in the terminal where the builds will run.
 
 ```sh
 # Enable local c2pa-rs build
@@ -81,7 +81,7 @@ export C2PA_BUILD_FROM_SOURCE=ON
 # If local build is enabled, set this environment variable to contain the path to c2pa-rs sources
 export C2PA_RS_PATH=path_to_c2pa_rs_sources
 
-# Since this is going to build Rust code, the build sysstem need to locate cargo, the tool to build RUst code
+# Since this is going to build Rust code, the build system needs to locate cargo, the tool to build Rust code
 # Add Rust cargo to PATH if not already there
 export PATH="$HOME/.cargo/bin:$PATH"
 
