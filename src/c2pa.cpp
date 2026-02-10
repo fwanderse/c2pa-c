@@ -411,10 +411,6 @@ inline std::vector<unsigned char> to_byte_vector(const unsigned char* data, int6
         return ContextBuilder().with_json(json).create_context();
     }
 
-    std::shared_ptr<IContextProvider> Context::from_toml(const std::string& toml) {
-        return ContextBuilder().with_toml(toml).create_context();
-    }
-
     // Context::ContextBuilder
 
     Context::ContextBuilder::ContextBuilder() : context_builder(c2pa_context_builder_new()) {

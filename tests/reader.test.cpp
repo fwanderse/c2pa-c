@@ -354,7 +354,7 @@ TEST_F(ReaderTest, ReadManifestWithTrustConfiguredTomlSettings)
     // already configured with that trust to use with our Builder and Reader.
     fs::path settings_path = current_dir / "../tests/fixtures/settings/test_settings_example.toml";
     auto settings = c2pa_test::read_text_file(settings_path);
-    auto trusted_context = c2pa::Context::from_toml(settings);
+    auto trusted_context = c2pa::Context::ContextBuilder().with_toml(settings).create_context();
 
     // When reading, the Reader also needs to know about trust, to determine the manifest validation state
     // If there is a valid trust chain, the manifest will be in validation_state Trusted.

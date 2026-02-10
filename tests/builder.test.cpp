@@ -892,7 +892,7 @@ TEST_F(BuilderTest, SignImageThumbnailSettingsFileToml)
     // Create context with specific settings via toml, by loading the TOML file
     fs::path settings_path = current_dir / "../tests/fixtures/settings/test_settings_no_thumbnail.toml";
     auto settings_toml = c2pa_test::read_text_file(settings_path);
-    auto context = c2pa::Context::from_toml(settings_toml);
+    auto context = c2pa::Context::ContextBuilder().with_toml(settings_toml).create_context();
 
     // Create builder using context containing settings (does not generate thumbnails)
     auto builder_no_thumbnail = c2pa::Builder(context, manifest);
@@ -909,7 +909,7 @@ TEST_F(BuilderTest, SignImageThumbnailSettingsFileToml)
     // Now, create builder with another context (settings generate a thumbnail)
     fs::path settings_path2 = current_dir / "../tests/fixtures/settings/test_settings_with_thumbnail.toml";
     auto settings_toml2 = c2pa_test::read_text_file(settings_path2);
-    auto context2 = c2pa::Context::from_toml(settings_toml2);
+    auto context2 = c2pa::Context::ContextBuilder().with_toml(settings_toml2).create_context();
 
     auto builder_with_thumbnail = c2pa::Builder(context2, manifest);
     std::vector<unsigned char> manifest_data_with_thumbnail;
@@ -2812,7 +2812,7 @@ TEST_F(BuilderTest, TrustHandling)
     // already configured with that trust to use with our Builder and Reader.
     fs::path settings_path = current_dir / "../tests/fixtures/settings/test_settings_example.toml";
     auto settings = c2pa_test::read_text_file(settings_path);
-    auto trusted_context = c2pa::Context::from_toml(settings);
+    auto trusted_context = c2pa::Context::ContextBuilder().with_toml(settings).create_context();
 
     // Create builder using context containing settings that does generate thumbnails
     auto builder = c2pa::Builder(trusted_context, manifest);

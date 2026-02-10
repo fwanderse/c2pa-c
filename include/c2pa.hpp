@@ -287,12 +287,6 @@ namespace c2pa
         /// @throws C2paException if JSON is invalid or context creation fails.
         [[nodiscard]] static std::shared_ptr<IContextProvider> from_json(const std::string& json);
 
-        /// @brief Create a Context from TOML configuration (settings).
-        /// @param toml TOML configuration string.
-        /// @return Shared pointer to the new Context.
-        /// @throws C2paException if TOML is invalid or context creation fails.
-        [[nodiscard]] static std::shared_ptr<IContextProvider> from_toml(const std::string& toml);
-
         // Non-copyable, non-moveable
         Context(const Context&) = delete;
         Context& operator=(const Context&) = delete;
@@ -321,8 +315,8 @@ namespace c2pa
     /// @param data the std::string to load.
     /// @param format the mime format of the string.
     /// @throws a C2pa::C2paException for errors encountered by the C2PA library.
-    /// @deprecated Use Context::from_json() or Context::from_toml() instead for better thread safety.
-    [[deprecated("Use Context pattern instead, Context::from_json() or Context::from_toml() instead")]]
+    /// @deprecated Use Context::from_json() or Context::ContextBuilder().with_toml().create_context() instead for better thread safety.
+    [[deprecated("Use Context pattern instead, Context::from_json() or Context::ContextBuilder().with_toml().create_context() instead")]]
     void C2PA_CPP_API load_settings(const std::string& data, const std::string& format);
 
     /// Reads a file and returns the manifest json as a C2pa::String.

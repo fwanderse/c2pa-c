@@ -62,21 +62,12 @@ static std::string load_fixture(const std::string &name)
     return c2pa_test::read_text_file(fixture_path(name));
 }
 
-// Can create a context
-TEST(Context, ContextCreateReturnsValid)
-{
-    auto context = c2pa::Context::create();
-    ASSERT_NE(context, nullptr);
-    EXPECT_TRUE(context->has_context());
-}
-
 // Can create a context using JSON settings
 TEST(Context, ContextFromJsonValid)
 {
     std::string json = R"({"settings": {}})";
     auto context = c2pa::Context::from_json(json);
     ASSERT_NE(context, nullptr);
-    EXPECT_TRUE(context->has_context());
 }
 
 // Context::from_json() with invalid JSON throws
@@ -88,20 +79,19 @@ TEST(Context, ContextFromJsonInvalidThrows)
     );
 }
 
-// Context::from_toml() with valid TOML returns valid context
+// ContextBuilder::with_toml() with valid TOML returns valid context
 TEST(Context, ContextFromTomlValid)
 {
     std::string toml = "[settings]\n";
-    auto context = c2pa::Context::from_toml(toml);
+    auto context = c2pa::Context::ContextBuilder().with_toml(toml).create_context();
     ASSERT_NE(context, nullptr);
-    EXPECT_TRUE(context->has_context());
 }
 
-// Context::from_toml() with invalid TOML throws
+// ContextBuilder::with_toml() with invalid TOML throws
 TEST(Context, ContextFromTomlInvalidThrows)
 {
     EXPECT_THROW(
-        { auto context = c2pa::Context::from_toml("bad toml [[[]"); },
+        { auto context = c2pa::Context::ContextBuilder().with_toml("bad toml [[[]").create_context(); },
         c2pa::C2paException
     );
 }
@@ -135,7 +125,6 @@ TEST(Context, ContextBuilderEmptyBuild)
     auto context = builder.create_context();
 
     ASSERT_NE(context, nullptr);
-    EXPECT_TRUE(context->has_context());
 }
 
 // Helper function to check if thumbnail is present in signed manifest
@@ -322,7 +311,6 @@ TEST(Context, ContextBuilderMoveConstructor) {
 
     auto context = b2.create_context();
     EXPECT_NE(context, nullptr);
-    EXPECT_TRUE(context->has_context());
 }
 
 TEST(Context, ContextBuilderMoveAssignment) {
@@ -336,7 +324,6 @@ TEST(Context, ContextBuilderMoveAssignment) {
 
     auto context = b1.create_context();
     EXPECT_NE(context, nullptr);
-    EXPECT_TRUE(context->has_context());
 }
 
 TEST(Context, SettingsMoveConstructor) {

@@ -188,7 +188,7 @@ int main()
         char *trust_settings = load_file("tests/fixtures/settings/test_settings_example.toml");
 
         // Create a context with trust anchors
-        auto trusted_context = c2pa::Context::from_toml(trust_settings);
+        auto trusted_context = c2pa::Context::ContextBuilder().with_toml(trust_settings).create_context();
         free(trust_settings);
 
         cout << "Created context with trust anchors" << endl;
