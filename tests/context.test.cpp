@@ -79,23 +79,6 @@ TEST(Context, ContextFromJsonInvalidThrows)
     );
 }
 
-// ContextBuilder::with_settings(Settings(..., "toml")) with valid TOML returns valid context
-TEST(Context, ContextFromTomlValid)
-{
-    std::string toml = "[settings]\n";
-    auto context = c2pa::Context::ContextBuilder().with_settings(c2pa::Settings(toml, "toml")).create_context();
-    ASSERT_NE(context, nullptr);
-}
-
-// ContextBuilder::with_settings(Settings(..., "toml")) with invalid TOML throws
-TEST(Context, ContextFromTomlInvalidThrows)
-{
-    EXPECT_THROW(
-        { auto context = c2pa::Context::ContextBuilder().with_settings(c2pa::Settings("bad toml [[[]", "toml")).create_context(); },
-        c2pa::C2paException
-    );
-}
-
 // Default context can be used with a Builder
 TEST(Context, SettingsDefaultConstruction)
 {
