@@ -70,6 +70,15 @@ TEST(Context, ContextFromJsonValid)
     ASSERT_NE(context, nullptr);
 }
 
+// Can create a context using Settings object
+TEST(Context, ContextFromSettingsValid)
+{
+    c2pa::Settings settings;
+    settings.set("builder.thumbnail.enabled", "false");
+    auto context = c2pa::Context::from_settings(settings);
+    ASSERT_NE(context, nullptr);
+}
+
 // Context::from_json() with invalid JSON throws
 TEST(Context, ContextFromJsonInvalidThrows)
 {

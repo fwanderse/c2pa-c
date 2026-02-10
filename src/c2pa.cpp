@@ -407,8 +407,24 @@ inline std::vector<unsigned char> to_byte_vector(const unsigned char* data, int6
         return std::make_shared<Context>(ctx);
     }
 
+    std::shared_ptr<IContextProvider> Context::from_settings(const Settings& settings) {
+        auto builder = c2pa_context_builder_new();
+        if (!builder) {
+            throw C2paException("Failed to create context builder");
+        }
+        if (c2pa_context_builder_set_settings(builder, settings.c_settings()) != 0) {
+            detail::safe_c2pa_free(builder);
+            throw C2paException();
+        }
+        C2paContext* ctx = c2pa_context_builder_build(builder);
+        if (!ctx) {
+            throw C2paException("Failed to build context");
+        }
+        return std::make_shared<Context>(ctx);
+    }
+
     std::shared_ptr<IContextProvider> Context::from_json(const std::string& json) {
-        return ContextBuilder().with_json(json).create_context();
+        return from_settings(Settings(json, "json"));
     }
 
     // Context::ContextBuilder
@@ -445,7 +461,7 @@ inline std::vector<unsigned char> to_byte_vector(const unsigned char* data, int6
 
     Context::ContextBuilder& Context::ContextBuilder::with_settings(const Settings& settings) {
         if (!is_valid()) {
-            throw C2paException("ContextBuilder is invalid (already consumed)");
+            throw C2paException("ContextBuilder is invalid (moved from)");
         }
         if (c2pa_context_builder_set_settings(context_builder, settings.c_settings()) != 0) {
             throw C2paException();
@@ -455,20 +471,25 @@ inline std::vector<unsigned char> to_byte_vector(const unsigned char* data, int6
 
     Context::ContextBuilder& Context::ContextBuilder::with_json(const std::string& json) {
         if (!is_valid()) {
-            throw C2paException("ContextBuilder is invalid (already consumed)");
+            throw C2paException("ContextBuilder is invalid (moved from)");
         }
         return with_settings(Settings(json, "json"));
     }
 
     std::shared_ptr<IContextProvider> Context::ContextBuilder::create_context() {
         if (!is_valid()) {
-            throw C2paException("ContextBuilder is invalid (already consumed)");
+            throw C2paException("ContextBuilder is invalid (moved from)");
         }
+        
+        // The C API consumes the builder on build
         C2paContext* ctx = c2pa_context_builder_build(context_builder);
         if (!ctx) {
             throw C2paException("Failed to build context");
         }
-        context_builder = nullptr; // Builder is consumed
+        
+        // Builder is consumed by the C API
+        context_builder = nullptr;
+        
         return std::make_shared<Context>(ctx);
     }
 
@@ -563,8 +584,7 @@ inline std::vector<unsigned char> to_byte_vector(const unsigned char* data, int6
     /// IStream Class wrapper for C2paStream.
     CppIStream::~CppIStream()
     {
-        if (c_stream != nullptr)
-            c2pa_release_stream(c_stream);
+        c2pa_release_stream(c_stream);
     }
 
     intptr_t CppIStream::reader(StreamContext *context, uint8_t *buffer, intptr_t size)
@@ -594,8 +614,7 @@ inline std::vector<unsigned char> to_byte_vector(const unsigned char* data, int6
     /// Ostream Class wrapper for C2paStream implementation.
     CppOStream::~CppOStream()
     {
-        if (c_stream != nullptr)
-            c2pa_release_stream(c_stream);
+        c2pa_release_stream(c_stream);
     }
 
     intptr_t CppOStream::reader(StreamContext *context, uint8_t *buffer, intptr_t size)
@@ -624,8 +643,7 @@ inline std::vector<unsigned char> to_byte_vector(const unsigned char* data, int6
     /// IOStream Class wrapper for C2paStream implementation.
     CppIOStream::~CppIOStream()
     {
-        if (c_stream != nullptr)
-            c2pa_release_stream(c_stream);
+        c2pa_release_stream(c_stream);
     }
 
     intptr_t CppIOStream::reader(StreamContext *context, uint8_t *buffer, intptr_t size)

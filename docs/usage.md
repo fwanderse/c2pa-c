@@ -70,11 +70,41 @@ const std::string manifest_json = R"{
 
 ## Using settings
 
-The behavior of the SDK cn be configured through various [settings](https://opensource.contentauthenticity.org/docs/manifest/json-ref/settings-schema/). SDK settings can be loaded from JSON or TOML files, as well as valid JSON strings directly in the code.
+The behavior of the SDK can be configured through various [settings](https://opensource.contentauthenticity.org/docs/manifest/json-ref/settings-schema/). SDK settings can be loaded from JSON config files, as well as valid JSON strings directly in the code.
 
 SDK settings are set on the `Context` objects used by the Builder and Reader objects.
 
 NOTE: If you don't specify a value for a property, then the SDK will use the default value. If you specify a value of null, then the property will be set to null, not the default.
+
+### Creating a Context
+
+The `Context` class provides several convenient factory methods for creating configured contexts:
+
+```cpp
+// Create with default settings
+auto context = c2pa::Context::create();
+
+// Create from JSON configuration
+auto context = c2pa::Context::from_json(R"({
+  "builder": {
+    "thumbnail": {
+      "enabled": true
+    }
+  }
+})");
+
+// Create from Settings object for programmatic configuration
+c2pa::Settings settings;
+settings.set("builder.thumbnail.enabled", "true");
+auto context = c2pa::Context::from_settings(settings);
+```
+
+Once created, contexts can be passed to Builder and Reader constructors:
+
+```cpp
+auto builder = c2pa::Builder(context, manifest_json);
+auto reader = c2pa::Reader(context, "image.jpg");
+```
 
 ## Creating a Builder
 

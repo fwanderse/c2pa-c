@@ -196,14 +196,17 @@ namespace c2pa
 
     /// @brief Immutable C2PA context implementing IContextProvider.
     /// @details Context objects are immutable after construction.
-    ///          Create contexts using factory methods or the
-    ///          builder pattern using the ContextBuilder object.
+    ///          Use factory methods for simple creation:
+    ///          - Context::create() for default settings
+    ///          - Context::from_json() for JSON configuration
+    ///          - Context::from_settings() for Settings objects
     class C2PA_CPP_API Context : public IContextProvider {
     public:
         /// @brief ContextBuilder for creating customized Context instances.
-        /// @details The builder follows a consuming builder pattern: after calling
-        ///          create_context(), the builder is left in an invalid state
-        ///          (is_valid can be used to check if the builder is still valid).
+        /// @details Provides a builder pattern for configuring contexts with multiple settings.
+        ///          Note: create_context() consumes the builder (due to C API design).
+        /// @note For most use cases, prefer the simpler factory methods:
+        ///       Context::from_json() or Context::from_settings().
         class C2PA_CPP_API ContextBuilder {
         public:
             ContextBuilder();
@@ -217,27 +220,26 @@ namespace c2pa
             ContextBuilder(const ContextBuilder&) = delete;
             ContextBuilder& operator=(const ContextBuilder&) = delete;
 
-            /// @brief Check if the builder is in a valid state (not consumed).
-            /// @return true if the builder can still be used, false if consumed.
+            /// @brief Check if the builder is in a valid state.
+            /// @return true if the builder can be used, false if moved from.
             [[nodiscard]] bool is_valid() const noexcept;
 
             /// @brief Configure with Settings object.
             /// @param settings Settings to use (will be copied into the context).
             /// @return Reference to this ContextBuilder for method chaining.
-            /// @throws C2paException if builder is invalid or settings are invalid.
+            /// @throws C2paException if settings are invalid.
             ContextBuilder& with_settings(const Settings& settings);
 
             /// @brief Configure settings with JSON string.
             /// @param json JSON configuration string.
             /// @return Reference to this ContextBuilder for method chaining.
-            /// @throws C2paException if builder is invalid or JSON is invalid.
+            /// @throws C2paException if JSON is invalid.
             ContextBuilder& with_json(const std::string& json);
 
-            /// @brief Create the immutable Context (consuming build operation).
+            /// @brief Create a Context from the current builder configuration.
             /// @return Shared pointer to the new Context.
-            /// @throws C2paException if context creation fails or builder is invalid.
-            /// @note This consumes the ContextBuilder. After calling create_context(),
-            ///       the builder is left in an invalid state (is_valid() returns false).
+            /// @throws C2paException if context creation fails.
+            /// @note This consumes the builder. After calling this, is_valid() returns false.
             [[nodiscard]] std::shared_ptr<IContextProvider> create_context();
 
         private:
@@ -249,7 +251,13 @@ namespace c2pa
         /// @throws C2paException if context creation fails.
         [[nodiscard]] static std::shared_ptr<IContextProvider> create();
 
-        /// @brief Create a Context from JSON configuration (settings).
+        /// @brief Create a Context from a Settings object.
+        /// @param settings Settings configuration.
+        /// @return Shared pointer to the new Context.
+        /// @throws C2paException if settings are invalid or context creation fails.
+        [[nodiscard]] static std::shared_ptr<IContextProvider> from_settings(const Settings& settings);
+
+        /// @brief Create a Context from JSON configuration.
         /// @param json JSON configuration string.
         /// @return Shared pointer to the new Context.
         /// @throws C2paException if JSON is invalid or context creation fails.
@@ -283,8 +291,8 @@ namespace c2pa
     /// @param data the std::string to load.
     /// @param format the mime format of the string.
     /// @throws a C2pa::C2paException for errors encountered by the C2PA library.
-    /// @deprecated Use Context::from_json() or Context::ContextBuilder().with_json().create_context() instead for better thread safety.
-    [[deprecated("Use Context pattern instead, Context::from_json() or Context::ContextBuilder().with_json().create_context() instead")]]
+    /// @deprecated Use Context::from_json() or Context::from_settings() instead for better thread safety.
+    [[deprecated("Use Context::from_json() or Context::from_settings() instead")]]
     void C2PA_CPP_API load_settings(const std::string& data, const std::string& format);
 
     /// Reads a file and returns the manifest json as a C2pa::String.
