@@ -66,8 +66,8 @@ static std::string load_fixture(const std::string &name)
 TEST(Context, ContextFromJsonValid)
 {
     std::string json = R"({"settings": {}})";
-    auto context = c2pa::Context::from_json(json);
-    ASSERT_NE(context, nullptr);
+    c2pa::Context context(json);
+    EXPECT_TRUE(context.has_context());
 }
 
 // Can create a context using Settings object
@@ -75,15 +75,15 @@ TEST(Context, ContextFromSettingsValid)
 {
     c2pa::Settings settings;
     settings.set("builder.thumbnail.enabled", "false");
-    auto context = c2pa::Context::from_settings(settings);
-    ASSERT_NE(context, nullptr);
+    c2pa::Context context(settings);
+    EXPECT_TRUE(context.has_context());
 }
 
-// Context::from_json() with invalid JSON throws
+// Context with invalid JSON throws
 TEST(Context, ContextFromJsonInvalidThrows)
 {
     EXPECT_THROW(
-        { auto context = c2pa::Context::from_json("{bad"); },
+        { c2pa::Context context("{bad"); },
         c2pa::C2paException
     );
 }
@@ -93,11 +93,11 @@ TEST(Context, SettingsDefaultConstruction)
 {
     c2pa::Settings settings;
     auto manifest = load_fixture("training.json");
-    auto context = c2pa::Context::create();
+    c2pa::Context context;
 
     // Should not crash when building with default settings
     EXPECT_NO_THROW({
-        auto builder = c2pa::Builder(context, manifest);
+        c2pa::Builder builder(context, manifest);
     });
 }
 
@@ -116,7 +116,7 @@ TEST(Context, ContextBuilderEmptyBuild)
     auto builder = c2pa::Context::ContextBuilder();
     auto context = builder.create_context();
 
-    ASSERT_NE(context, nullptr);
+    EXPECT_TRUE(context.has_context());
 }
 
 // Helper function to check if thumbnail is present in signed manifest
@@ -127,7 +127,7 @@ static bool has_thumbnail(const std::string& manifest_json) {
 }
 
 // Helper function to sign with context and return manifest JSON
-static std::string sign_with_context(std::shared_ptr<c2pa::IContextProvider> context, const fs::path& dest_path) {
+static std::string sign_with_context(c2pa::IContextProvider& context, const fs::path& dest_path) {
     fs::path current_dir = fs::path(__FILE__).parent_path();
     fs::path manifest_path = current_dir / "fixtures/training.json";
     fs::path asset_path = current_dir / "fixtures/A.jpg";
@@ -232,7 +232,7 @@ TEST(Context, ContextBuilderMoveConstructor) {
     EXPECT_TRUE(b2.is_valid());
 
     auto context = b2.create_context();
-    EXPECT_NE(context, nullptr);
+    EXPECT_TRUE(context.has_context());
 }
 
 TEST(Context, ContextBuilderMoveAssignment) {
@@ -245,7 +245,7 @@ TEST(Context, ContextBuilderMoveAssignment) {
     EXPECT_TRUE(b1.is_valid());
 
     auto context = b1.create_context();
-    EXPECT_NE(context, nullptr);
+    EXPECT_TRUE(context.has_context());
 }
 
 TEST(Context, SettingsMoveConstructor) {
@@ -258,7 +258,7 @@ TEST(Context, SettingsMoveConstructor) {
 
     // Verify s2 is functional
     auto context = c2pa::Context::ContextBuilder().with_settings(s2).create_context();
-    EXPECT_NE(context, nullptr);
+    EXPECT_TRUE(context.has_context());
 }
 
 TEST(Context, SettingsMoveAssignment) {
@@ -296,4 +296,103 @@ TEST(Context, DoubleConsumeThrows) {
         auto context2 = builder.create_context();
         (void)context2; // Suppress unused variable warning
     }, c2pa::C2paException);
+}
+
+// Default constructor creates a valid context
+TEST(Context, DirectConstructDefault) {
+    c2pa::Context context;
+    EXPECT_TRUE(context.has_context());
+    EXPECT_NE(context.c_context(), nullptr);
+}
+
+// Constructor with Settings creates a valid context
+TEST(Context, DirectConstructWithSettings) {
+    c2pa::Settings settings;
+    settings.set("builder.thumbnail.enabled", "false");
+
+    c2pa::Context context(settings);
+    EXPECT_TRUE(context.has_context());
+}
+
+// Default constructor can be used with Builder
+TEST(Context, DirectConstructDefaultWithBuilder) {
+    auto manifest = load_fixture("training.json");
+    c2pa::Context context;
+
+    EXPECT_NO_THROW({
+        c2pa::Builder builder(context, manifest);
+    });
+}
+
+// =============================================================================
+// All creation variations: sign + verify settings propagate
+// =============================================================================
+
+// 1) Direct construction with Settings — sign and verify thumbnail is disabled
+TEST_F(ContextTest, DirectConstructSettingsSignVerify) {
+    c2pa::Settings settings;
+    settings.set("builder.thumbnail.enabled", "false");
+
+    c2pa::Context context(settings);
+    auto manifest_json = sign_with_context(context, get_temp_path("direct_construct_settings.jpg"));
+
+    EXPECT_FALSE(has_thumbnail(manifest_json));
+}
+
+// 2) Direct default construction — sign and verify thumbnail is enabled (default)
+TEST_F(ContextTest, DirectConstructDefaultSignVerify) {
+    c2pa::Context context;
+    auto manifest_json = sign_with_context(context, get_temp_path("direct_construct_default.jpg"));
+
+    EXPECT_TRUE(has_thumbnail(manifest_json));
+}
+
+// 3) JSON string constructor — sign and verify thumbnail is disabled
+TEST_F(ContextTest, JsonConstructorSignVerify) {
+    c2pa::Context context(R"({"builder": {"thumbnail": {"enabled": false}}})");
+    auto manifest_json = sign_with_context(context, get_temp_path("json_constructor.jpg"));
+
+    EXPECT_FALSE(has_thumbnail(manifest_json));
+}
+
+// 4) ContextBuilder with Settings — sign and verify thumbnail is disabled
+TEST_F(ContextTest, ContextBuilderWithSettingsSignVerify) {
+    c2pa::Settings settings;
+    settings.set("builder.thumbnail.enabled", "false");
+
+    auto context = c2pa::Context::ContextBuilder()
+        .with_settings(settings)
+        .create_context();
+    auto manifest_json = sign_with_context(context, get_temp_path("builder_with_settings.jpg"));
+
+    EXPECT_FALSE(has_thumbnail(manifest_json));
+}
+
+// 5) ContextBuilder with JSON — sign and verify thumbnail is disabled
+TEST_F(ContextTest, ContextBuilderWithJsonSignVerify) {
+    auto context = c2pa::Context::ContextBuilder()
+        .with_json(R"({"builder": {"thumbnail": {"enabled": false}}})")
+        .create_context();
+    auto manifest_json = sign_with_context(context, get_temp_path("builder_with_json.jpg"));
+
+    EXPECT_FALSE(has_thumbnail(manifest_json));
+}
+
+// 6) ContextBuilder empty (default) — sign and verify thumbnail is enabled (default)
+TEST_F(ContextTest, ContextBuilderDefaultSignVerify) {
+    auto context = c2pa::Context::ContextBuilder().create_context();
+    auto manifest_json = sign_with_context(context, get_temp_path("builder_default.jpg"));
+
+    EXPECT_TRUE(has_thumbnail(manifest_json));
+}
+
+// 7) Direct construction with Settings enabling thumbnail — sign and verify
+TEST_F(ContextTest, DirectConstructSettingsEnableThumbnailSignVerify) {
+    c2pa::Settings settings;
+    settings.set("builder.thumbnail.enabled", "true");
+
+    c2pa::Context context(settings);
+    auto manifest_json = sign_with_context(context, get_temp_path("direct_construct_enable_thumb.jpg"));
+
+    EXPECT_TRUE(has_thumbnail(manifest_json));
 }

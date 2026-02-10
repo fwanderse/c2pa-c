@@ -78,32 +78,53 @@ NOTE: If you don't specify a value for a property, then the SDK will use the def
 
 ### Creating a Context
 
-The `Context` class provides several convenient factory methods for creating configured contexts:
+The `Context` class manages C2PA SDK configuration. There are two ways to create a context: direct construction and the ContextBuilder.
+
+#### Direct construction
 
 ```cpp
-// Create with default settings
-auto context = c2pa::Context::create();
+// Default settings
+c2pa::Context context;
 
-// Create from JSON configuration
-auto context = c2pa::Context::from_json(R"({
+// From a Settings object
+c2pa::Settings settings;
+settings.set("builder.thumbnail.enabled", "true");
+c2pa::Context context(settings);
+
+// From a JSON configuration string
+c2pa::Context context(R"({
   "builder": {
     "thumbnail": {
       "enabled": true
     }
   }
 })");
-
-// Create from Settings object for programmatic configuration
-c2pa::Settings settings;
-settings.set("builder.thumbnail.enabled", "true");
-auto context = c2pa::Context::from_settings(settings);
 ```
 
-Once created, contexts can be passed to Builder and Reader constructors:
+#### ContextBuilder
+
+The builder pattern is useful when you need to layer multiple configuration sources:
 
 ```cpp
-auto builder = c2pa::Builder(context, manifest_json);
-auto reader = c2pa::Reader(context, "image.jpg");
+c2pa::Settings settings;
+settings.set("builder.thumbnail.enabled", "true");
+
+auto context = c2pa::Context::ContextBuilder()
+    .with_settings(settings)
+    .with_json(R"({"verify": {"verify_after_sign": true}})")
+    .create_context();
+```
+
+Note: the ContextBuilder is consumed after calling `create_context()`. For single-source configuration, prefer direct construction.
+
+#### Using a Context
+
+Contexts are passed by reference to Builder and Reader constructors. The context must remain valid for the lifetime of the Builder or Reader:
+
+```cpp
+c2pa::Context context;
+c2pa::Builder builder(context, manifest_json);
+c2pa::Reader reader(context, "image.jpg");
 ```
 
 ## Creating a Builder

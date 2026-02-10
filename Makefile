@@ -80,11 +80,35 @@ test-coverage: clean
 	cmake -S . -B build/coverage -G "Ninja" -DCMAKE_BUILD_TYPE=Debug -DENABLE_COVERAGE=ON $(CMAKE_OPTS)
 	cmake --build build/coverage
 	cd build/coverage && ctest --output-on-failure
+	@echo ""
 	@echo "Generating coverage report..."
-	@lcov --capture --directory build/coverage --output-file build/coverage/coverage.info --ignore-errors mismatch,inconsistent,unsupported,format 2>&1 | grep -E "^(Capturing|geninfo|Found|Using|Recording|Writing|Scanning|Finished|Summary coverage rate:|  (source files|lines|functions)|Filter|Message summary:|  [0-9]+ (warning|error|ignore) message)" | grep -v "WARNING:" || true
-	@lcov --remove build/coverage/coverage.info '/usr/*' '*/googletest/*' '*/json-src/*' '*/c2pa_prebuilt-src/*' '*/tests/*' --output-file build/coverage/coverage_filtered.info --ignore-errors unused,mismatch,inconsistent,format 2>&1 | grep -E "^(Removing|Deleted|Writing|Summary coverage rate:|  (source files|lines|functions))" | grep -v "Excluding" || true
-	@genhtml build/coverage/coverage_filtered.info --output-directory build/coverage/html --ignore-errors inconsistent,corrupt,unsupported,format,category 2>&1 | grep -E "^(Reading|Found|Generating|Processing|Overall coverage rate:|  (source files|lines|functions))" || true
-	@echo "HTML report: build/coverage/html/index.html"
+	@lcov --capture --directory build/coverage --output-file build/coverage/coverage.info \
+		--ignore-errors mismatch,inconsistent,unsupported,format 2>&1 \
+		| grep -v "WARNING:" || { echo "Error: lcov capture failed"; exit 1; }
+	@lcov --remove build/coverage/coverage.info \
+		'/usr/*' '*/googletest/*' '*/json-src/*' '*/c2pa_prebuilt-src/*' '*/tests/*' \
+		--output-file build/coverage/coverage_filtered.info \
+		--ignore-errors unused,mismatch,inconsistent,format 2>&1 \
+		| grep -v "WARNING:" || { echo "Error: lcov filter failed"; exit 1; }
+	@echo ""
+	@echo "=== Coverage Summary ==="
+	@lcov --summary build/coverage/coverage_filtered.info \
+		--ignore-errors inconsistent,format 2>&1 \
+		| grep -E "(lines|functions|branches)" || true
+	@echo "========================"
+	@echo ""
+	@if command -v genhtml > /dev/null 2>&1; then \
+		genhtml build/coverage/coverage_filtered.info --output-directory build/coverage/html \
+			--ignore-errors inconsistent,corrupt,unsupported,format,category 2>&1 \
+			| grep -v "WARNING:" || true; \
+		if [ -f build/coverage/html/index.html ]; then \
+			echo "HTML report: build/coverage/html/index.html"; \
+		else \
+			echo "Warning: HTML report was not generated (genhtml may have failed)"; \
+		fi; \
+	else \
+		echo "Note: genhtml not found, skipping HTML report (install lcov for HTML reports)"; \
+	fi
 
 # Demo targets
 demo: release
