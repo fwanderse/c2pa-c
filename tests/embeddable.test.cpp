@@ -71,7 +71,7 @@ TEST_F(EmbeddableTest, FullWorkflowWithAJpg) {
     auto source_asset = c2pa_test::get_fixture_path("A.jpg");
 
     // Create signing infra
-    auto context = c2pa::Context::create();
+    auto context = c2pa::Context();
     auto builder = c2pa::Builder(context, manifest_json);
     c2pa::Signer signer("Es256", certs, private_key, "http://timestamp.digicert.com");
 
@@ -126,7 +126,7 @@ TEST_F(EmbeddableTest, FullWorkflowWithCJpg) {
     auto signer = c2pa_test::create_test_signer();
     auto source_asset = c2pa_test::get_fixture_path("C.jpg");
 
-    auto context = c2pa::Context::create();
+    auto context = c2pa::Context();
     auto builder = c2pa::Builder(context, manifest_json);
 
     // Get placeholder
@@ -169,7 +169,7 @@ TEST_F(EmbeddableTest, PreCalculatedHash) {
     auto manifest_json = c2pa_test::read_text_file(c2pa_test::get_fixture_path("training.json"));
     auto signer = c2pa_test::create_test_signer();
 
-    auto context = c2pa::Context::create();
+    auto context = c2pa::Context();
     auto builder = c2pa::Builder(context, manifest_json);
 
     // Get placeholder
@@ -213,7 +213,7 @@ TEST_F(EmbeddableTest, AutoCalculatedHash) {
     auto signer = c2pa_test::create_test_signer();
     auto source_asset = c2pa_test::get_fixture_path("A.jpg");
 
-    auto context = c2pa::Context::create();
+    auto context = c2pa::Context();
     auto builder = c2pa::Builder(context, manifest_json);
 
     // Get placeholder
@@ -254,7 +254,7 @@ TEST_F(EmbeddableTest, FormatEmbeddableRoundTrip) {
     auto signer = c2pa_test::create_test_signer();
     auto source_asset = c2pa_test::get_fixture_path("A.jpg");
 
-    auto context = c2pa::Context::create();
+    auto context = c2pa::Context();
     auto builder = c2pa::Builder(context, manifest_json);
 
     auto placeholder = builder.data_hashed_placeholder(signer.reserve_size(), "image/jpeg");
@@ -297,7 +297,7 @@ TEST_F(EmbeddableTest, PlaceholderSizeMatchesFinalInvariant) {
     auto signer = c2pa_test::create_test_signer();
     auto source_asset = c2pa_test::get_fixture_path("A.jpg");
 
-    auto context = c2pa::Context::create();
+    auto context = c2pa::Context();
     auto builder = c2pa::Builder(context, manifest_json);
 
     // Get placeholder and record its size
@@ -335,7 +335,7 @@ TEST_F(EmbeddableTest, PlaceholderSizeMatchesFinalInvariantWithMetadata) {
     auto signer = c2pa_test::create_test_signer();
     auto source_asset = c2pa_test::get_fixture_path("C.jpg");
 
-    auto context = c2pa::Context::create();
+    auto context = c2pa::Context();
     auto builder = c2pa::Builder(context, manifest_json);
 
     auto placeholder = builder.data_hashed_placeholder(signer.reserve_size(), "image/jpeg");
@@ -367,7 +367,7 @@ TEST_F(EmbeddableTest, ContextSettingsPropagation) {
     auto source_asset = c2pa_test::get_fixture_path("A.jpg");
 
     // Create context with custom settings
-    auto context = c2pa::Context::from_json(R"({
+    auto context = c2pa::Context(R"({
         "builder": {
             "thumbnail": {
                 "enabled": false
@@ -408,7 +408,7 @@ TEST_F(EmbeddableTest, ArchiveRoundTripWithContextAJpg) {
     auto signer = c2pa_test::create_test_signer();
 
     // Create context with custom settings (thumbnails disabled)
-    auto context = c2pa::Context::from_json(R"({
+    auto context = c2pa::Context(R"({
         "builder": {
             "thumbnail": {
                 "enabled": false
@@ -430,7 +430,7 @@ TEST_F(EmbeddableTest, ArchiveRoundTripWithContextAJpg) {
     // Load from archive using same context
     auto builder2 = c2pa::Builder(context);
     std::ifstream load_stream(archive_path, std::ios::binary);
-    builder2.load_archive(load_stream);
+    builder2.with_archive(load_stream);
     load_stream.close();
 
     // Get placeholder from restored builder
@@ -447,7 +447,7 @@ TEST_F(EmbeddableTest, ArchiveRoundTripWithContextCJpg) {
     auto signer = c2pa_test::create_test_signer();
     auto source_asset = c2pa_test::get_fixture_path("C.jpg");
 
-    auto context = c2pa::Context::from_json(R"({
+    auto context = c2pa::Context(R"({
         "builder": {
             "thumbnail": {
                 "enabled": false
@@ -464,7 +464,7 @@ TEST_F(EmbeddableTest, ArchiveRoundTripWithContextCJpg) {
 
     auto builder2 = c2pa::Builder(context);
     std::ifstream load_stream(archive_path, std::ios::binary);
-    builder2.load_archive(load_stream);
+    builder2.with_archive(load_stream);
     load_stream.close();
 
     auto placeholder = builder2.data_hashed_placeholder(signer.reserve_size(), "image/jpeg");
@@ -519,7 +519,7 @@ TEST_F(EmbeddableTest, ArchiveWithIngredientAJpg) {
         ]
     })";
 
-    auto context = c2pa::Context::from_json(R"({
+    auto context = c2pa::Context(R"({
         "builder": {
             "thumbnail": {
                 "enabled": false
@@ -545,7 +545,7 @@ TEST_F(EmbeddableTest, ArchiveWithIngredientAJpg) {
 
     auto builder2 = c2pa::Builder(context);
     std::ifstream load_stream(archive_path, std::ios::binary);
-    builder2.load_archive(load_stream);
+    builder2.with_archive(load_stream);
     load_stream.close();
 
     // Get placeholder from restored builder
@@ -583,7 +583,7 @@ TEST_F(EmbeddableTest, ArchiveWithIngredientCJpg) {
         ]
     })";
 
-    auto context = c2pa::Context::from_json(R"({
+    auto context = c2pa::Context(R"({
         "builder": {
             "thumbnail": {
                 "enabled": false
@@ -603,7 +603,7 @@ TEST_F(EmbeddableTest, ArchiveWithIngredientCJpg) {
 
     auto builder2 = c2pa::Builder(context);
     std::ifstream load_stream(archive_path, std::ios::binary);
-    builder2.load_archive(load_stream);
+    builder2.with_archive(load_stream);
     load_stream.close();
 
     // Verify we can create placeholders and sign after round-trip
@@ -632,7 +632,7 @@ TEST_F(EmbeddableTest, MultipleFormats) {
     auto manifest_json = c2pa_test::read_text_file(c2pa_test::get_fixture_path("training.json"));
     auto signer = c2pa_test::create_test_signer();
 
-    auto context = c2pa::Context::create();
+    auto context = c2pa::Context();
 
     // jpeg
     {
@@ -693,7 +693,7 @@ TEST_F(EmbeddableTest, DirectEmbeddingWithFormat) {
     auto signer = c2pa_test::create_test_signer();
     auto source_asset = c2pa_test::get_fixture_path("A.jpg");
 
-    auto context = c2pa::Context::create();
+    auto context = c2pa::Context();
     auto builder = c2pa::Builder(context, manifest_json);
 
     auto placeholder = builder.data_hashed_placeholder(signer.reserve_size(), "image/jpeg");

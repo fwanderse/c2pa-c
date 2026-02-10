@@ -131,7 +131,7 @@ TEST_F(ReaderTest, MultipleReadersSameFileUsingContext)
     ASSERT_TRUE(std::filesystem::exists(test_file)) << "Test file does not exist: " << test_file;
 
     // Create a Context
-    auto context = c2pa::Context::create();
+    auto context = c2pa::Context();
 
     // create multiple readers from the same file using the context
     auto reader1 = c2pa::Reader(context, test_file);
@@ -186,7 +186,7 @@ TEST_F(ReaderTest, VideoStreamWithManifestUsingExtensionUsingContext) {
   ASSERT_TRUE(file_stream.is_open()) << "Failed to open video file: " << test_file;
 
   // Create a Context and pass it to the Reader
-  auto context = c2pa::Context::create();
+  auto context = c2pa::Context();
   auto reader = c2pa::Reader(context, "mp4", file_stream);
   auto manifest_store_json = reader.json();
   EXPECT_TRUE(manifest_store_json.find("My Title") != std::string::npos);
@@ -303,7 +303,7 @@ TEST_F(ReaderTest, HasManifestUtf8PathUsingContext) {
     std::ifstream stream(test_file, std::ios::binary);
 
     // Create a Context and pass it to the Reader
-    auto context = c2pa::Context::create();
+    auto context = c2pa::Context();
     auto reader = c2pa::Reader(context, "image/jpeg", stream);
 
     EXPECT_FALSE(reader.remote_url());
@@ -354,7 +354,7 @@ TEST_F(ReaderTest, ReadManifestWithTrustConfiguredJsonSettings)
     // already configured with that trust to use with our Builder and Reader.
     fs::path settings_path = current_dir / "../tests/fixtures/settings/test_settings_example.json";
     auto settings = c2pa_test::read_text_file(settings_path);
-    auto trusted_context = c2pa::Context::from_json(settings);
+    auto trusted_context = c2pa::Context(settings);
 
     // When reading, the Reader also needs to know about trust, to determine the manifest validation state
     // If there is a valid trust chain, the manifest will be in validation_state Trusted.
@@ -378,7 +378,7 @@ TEST_F(ReaderTest, ReaderFromIStreamWithContext)
         GTEST_SKIP() << "Fixture not found: " << signed_path;
     }
 
-    auto context = c2pa::Context::create();
+    auto context = c2pa::Context();
     std::ifstream stream(signed_path, std::ios::binary);
     ASSERT_TRUE(stream) << "Failed to open " << signed_path;
 
@@ -442,7 +442,7 @@ TEST(ReaderErrorHandling, EmptyStreamBehavesTheSameWithAndWithoutContext)
     }, c2pa::C2paException);
 
     // With context
-    auto ctx = c2pa::Context::create();
+    auto ctx = c2pa::Context();
     EXPECT_THROW({
         c2pa::Reader reader(ctx, format, empty_stream2);
     }, c2pa::C2paException);
@@ -458,7 +458,7 @@ TEST(ReaderErrorHandling, NonExistentFileBehavesTheSameWithAndWithoutContext)
     }, std::system_error);
 
     // With context
-    auto ctx = c2pa::Context::create();
+    auto ctx = c2pa::Context();
     EXPECT_THROW({
         c2pa::Reader reader(ctx, nonexistent);
     }, std::system_error);
@@ -483,7 +483,7 @@ TEST(ReaderErrorHandling, InvalidStreamBehavesTheSameWithAndWithoutContext)
     }
 
     try {
-        auto ctx = c2pa::Context::create();
+        auto ctx = c2pa::Context();
         c2pa::Reader reader(ctx, format, stream2);
     } catch (...) {
         with_context_throws = true;
@@ -509,7 +509,7 @@ TEST(ReaderErrorHandling, FailedReaderConstructionWithAndWithoutContext)
 
         // With context
         try {
-            auto ctx = c2pa::Context::create();
+            auto ctx = c2pa::Context();
             c2pa::Reader reader(ctx, format, stream2);
         } catch (...) {
             // Expected to fail on empty stream
@@ -533,7 +533,7 @@ TEST(ReaderErrorHandling, ErrorMessagesWithAndWithoutContext)
 
     // With context
     try {
-        auto ctx = c2pa::Context::create();
+        auto ctx = c2pa::Context();
         c2pa::Reader reader(ctx, format, empty_stream2);
         FAIL() << "Should have thrown";
     } catch (const c2pa::C2paException& e) {

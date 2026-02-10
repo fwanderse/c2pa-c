@@ -218,13 +218,13 @@ TEST(BuilderErrorHandling, MalformedJsonManifestReturnsError)
 
 TEST(BuilderErrorHandling, EmptyManifestJsonReturnsErrorWithContext)
 {
-    auto context = c2pa::Context::create();
+    auto context = c2pa::Context();
     EXPECT_THROW(c2pa::Builder(context, ""), c2pa::C2paException);
 }
 
 TEST(BuilderErrorHandling, MalformedJsonManifestReturnsErrorWithContext)
 {
-    auto context = c2pa::Context::create();
+    auto context = c2pa::Context();
     EXPECT_THROW(c2pa::Builder(context, "{ invalid json"), c2pa::C2paException);
 }
 
@@ -247,7 +247,7 @@ TEST(BuilderErrorHandling, JsonErrorsBehaveSameWithAndWithoutContext)
             << "Without context, should throw for: " << bad_input;
 
         // With context
-        auto ctx = c2pa::Context::create();
+        auto ctx = c2pa::Context();
         EXPECT_THROW({
             c2pa::Builder builder(ctx, bad_input);
         }, c2pa::C2paException)
@@ -265,7 +265,7 @@ TEST(BuilderErrorHandling, ValidJsonWorksWithAndWithoutContext)
     });
 
     // With context
-    auto ctx = c2pa::Context::create();
+    auto ctx = c2pa::Context();
     EXPECT_NO_THROW({
         c2pa::Builder builder(ctx, valid_json);
     });
@@ -284,7 +284,7 @@ TEST(BuilderErrorHandling, FailedConstructionWithAndWithoutContext)
 
         // With context
         try {
-            auto ctx = c2pa::Context::create();
+            auto ctx = c2pa::Context();
             c2pa::Builder(ctx, "");
             FAIL() << "Should have thrown";
         } catch (const c2pa::C2paException&) {
@@ -306,7 +306,7 @@ TEST(BuilderErrorHandling, ErrorMessagesWithAndWithoutContext)
 
     // With context
     try {
-        auto ctx = c2pa::Context::create();
+        auto ctx = c2pa::Context();
         c2pa::Builder(ctx, "");
         FAIL() << "Should have thrown";
     } catch (const c2pa::C2paException& e) {
@@ -425,7 +425,7 @@ TEST_F(BuilderTest, AddAnActionAndSignUsingContext)
     c2pa::Signer signer = c2pa::Signer("Es256", certs, p_key, "http://timestamp.digicert.com");
 
     // Create a Context and pass it to the Builder
-    auto context = c2pa::Context::create();
+    auto context = c2pa::Context();
     auto builder = c2pa::Builder(context, manifest);
 
     // Add an action to the builder
@@ -638,7 +638,7 @@ TEST_F(BuilderTest, AddMultipleActionsAndSignUsingContext)
     c2pa::Signer signer = c2pa::Signer("Es256", certs, p_key, "http://timestamp.digicert.com");
 
     // Create a Context and pass it to the Builder
-    auto context = c2pa::Context::create();
+    auto context = c2pa::Context();
     auto builder = c2pa::Builder(context, manifest);
 
     // Add multiple actions to the builder
@@ -830,7 +830,7 @@ TEST_F(BuilderTest, SignImageFileNoThumbnailAutoGen)
     c2pa::Signer signer = c2pa::Signer("Es256", certs, p_key, "http://timestamp.digicert.com");
 
     // Test 1: Create context with specific settings via JSON
-    auto context = c2pa::Context::from_json("{\"builder\": { \"thumbnail\": {\"enabled\": false}}}");
+    auto context = c2pa::Context("{\"builder\": { \"thumbnail\": {\"enabled\": false}}}");
 
     // Create builder using context containing settings
     auto builder_with_context = c2pa::Builder(context, manifest);
@@ -892,7 +892,7 @@ TEST_F(BuilderTest, SignImageThumbnailSettingsFileJson)
     // Create context with specific settings via JSON, by loading the JSON file with the settings
     fs::path settings_path = current_dir / "../tests/fixtures/settings/test_settings_no_thumbnail.json";
     auto settings_json = c2pa_test::read_text_file(settings_path);
-    auto context = c2pa::Context::from_json(settings_json);
+    auto context = c2pa::Context(settings_json);
 
     // Create builder using context containing settings (does not generate thumbnails)
     auto builder_no_thumbnail = c2pa::Builder(context, manifest);
@@ -909,7 +909,7 @@ TEST_F(BuilderTest, SignImageThumbnailSettingsFileJson)
     // Now, create builder with another context (settings generate a thumbnail)
     fs::path settings_path2 = current_dir / "../tests/fixtures/settings/test_settings_with_thumbnail.json";
     auto settings_json2 = c2pa_test::read_text_file(settings_path2);
-    auto context2 = c2pa::Context::from_json(settings_json2);
+    auto context2 = c2pa::Context(settings_json2);
 
     auto builder_with_thumbnail = c2pa::Builder(context2, manifest);
     std::vector<unsigned char> manifest_data_with_thumbnail;
@@ -1088,7 +1088,7 @@ TEST_F(BuilderTest, SignImageFileWithResourceUsingContext)
     c2pa::Signer signer = c2pa::Signer("Es256", certs, p_key, "http://timestamp.digicert.com");
 
     // Create a Context and pass it to the Builder
-    auto context = c2pa::Context::create();
+    auto context = c2pa::Context();
     auto builder = c2pa::Builder(context, manifest);
     // add a resource: a thumbnail
     builder.add_resource("thumbnail", image_path);
@@ -1271,7 +1271,7 @@ TEST_F(BuilderTest, SignVideoFileWithMultipleIngredientsUsingContext)
     c2pa::Signer signer = c2pa::Signer("Es256", certs, p_key, "http://timestamp.digicert.com");
 
     // create the builder with context
-    auto context = c2pa::Context::create();
+    auto context = c2pa::Context();
     auto builder = c2pa::Builder(context, manifest);
 
     // add the ingredients for the video
@@ -1440,7 +1440,7 @@ TEST_F(BuilderTest, SignImageStream)
     c2pa::Signer signer = c2pa::Signer("Es256", certs, p_key, "http://timestamp.digicert.com");
 
     // Create a default context (no custom settings)
-    auto context = c2pa::Context::create();
+    auto context = c2pa::Context();
 
     // Create builder with context
     auto builder = c2pa::Builder(context, manifest);
@@ -1492,7 +1492,7 @@ TEST_F(BuilderTest, SignImageStreamBuilderReaderDifferentContext)
     c2pa::Signer signer = c2pa::Signer("Es256", certs, p_key, "http://timestamp.digicert.com");
 
     // Create a default context (no custom settings, defaults to SDK default settings)
-    auto write_context = c2pa::Context::create();
+    auto write_context = c2pa::Context();
 
     // Create builder with context
     auto builder = c2pa::Builder(write_context, manifest);
@@ -1522,7 +1522,7 @@ TEST_F(BuilderTest, SignImageStreamBuilderReaderDifferentContext)
     // (Here for this test we use a demo empty context again)
 
     // Create a default context (no custom settings)
-    auto read_context = c2pa::Context::create();
+    auto read_context = c2pa::Context();
 
     auto reader = c2pa::Reader(read_context, "image/jpeg", dest);
     std::string json;
@@ -1692,7 +1692,7 @@ TEST_F(BuilderTest, SignDataHashedEmbeddedUsingContext)
     c2pa::Signer signer = c2pa::Signer("Es256", certs, p_key, "http://timestamp.digicert.com");
 
     // Create a Context and pass it to the Builder
-    auto context = c2pa::Context::create();
+    auto context = c2pa::Context();
     auto builder = c2pa::Builder(context, manifest);
 
     auto placeholder = builder.data_hashed_placeholder(signer.reserve_size(), "image/jpeg");
@@ -1777,7 +1777,7 @@ TEST_F(BuilderTest, SignDataHashedEmbeddedWithAssetUsingContext)
     c2pa::Signer signer = c2pa::Signer("Es256", certs, p_key, "http://timestamp.digicert.com");
 
     // Create a Context and pass it to the Builder
-    auto context = c2pa::Context::create();
+    auto context = c2pa::Context();
     auto builder = c2pa::Builder(context, manifest);
 
     auto placeholder = builder.data_hashed_placeholder(signer.reserve_size(), "image/jpeg");
@@ -2190,7 +2190,7 @@ TEST_F(BuilderTest, LinkIngredientsAndSignUsingContext)
     }
 
     // Create a Context and pass it to the Builder
-    auto context = c2pa::Context::create();
+    auto context = c2pa::Context();
     auto builder = c2pa::Builder(context, manifest_json.dump());
 
     // add an ingredient
@@ -2457,7 +2457,7 @@ TEST_F(BuilderTest, AddIngredientToBuilderUsingBasePathWithManifestContainingPla
     fs::path temp_dir = get_temp_dir("ingredient_placed_context");
 
     // Create context with auto_placed_action disabled via JSON settings
-    auto context = c2pa::Context::from_json("{\"builder\": { \"actions\": {\"auto_placed_action\": {\"enabled\": false}}}}");
+    auto context = c2pa::Context("{\"builder\": { \"actions\": {\"auto_placed_action\": {\"enabled\": false}}}}");
 
     // Get the needed JSON for the ingredient
     std::string result;
@@ -2611,12 +2611,12 @@ TEST_F(BuilderTest, MultipleBuildersDifferentThumbnailSettingsInterleaved)
     // Create one context with specific settings via JSON, by loading the JSON file with the settings
     fs::path settings_path = current_dir / "../tests/fixtures/settings/test_settings_no_thumbnail.json";
     auto settings_json = c2pa_test::read_text_file(settings_path);
-    auto context_without_thumbnails = c2pa::Context::from_json(settings_json);
+    auto context_without_thumbnails = c2pa::Context(settings_json);
 
     // Now, create anothetrcontext, that sets thumbnails to be generated
     fs::path settings_path2 = current_dir / "../tests/fixtures/settings/test_settings_with_thumbnail.json";
     auto settings_json2 = c2pa_test::read_text_file(settings_path2);
-    auto context_with_thumbnails = c2pa::Context::from_json(settings_json2);
+    auto context_with_thumbnails = c2pa::Context(settings_json2);
 
     // Create builder using context containing settings that does not generate thumbnails
     auto builder_no_thumbnail = c2pa::Builder(context_without_thumbnails, manifest);
@@ -2678,12 +2678,12 @@ TEST_F(BuilderTest, MultipleBuildersDifferentThumbnailSettingsInterleaved2)
     // Create one context with specific settings via JSON, by loading the JSON file with the settings
     fs::path settings_path = current_dir / "../tests/fixtures/settings/test_settings_no_thumbnail.json";
     auto settings_json = c2pa_test::read_text_file(settings_path);
-    auto context_without_thumbnails = c2pa::Context::from_json(settings_json);
+    auto context_without_thumbnails = c2pa::Context(settings_json);
 
     // Now, create another context, that sets thumbnails to be generated
     fs::path settings_path2 = current_dir / "../tests/fixtures/settings/test_settings_with_thumbnail.json";
     auto settings_json2 = c2pa_test::read_text_file(settings_path2);
-    auto context_with_thumbnails = c2pa::Context::from_json(settings_json2);
+    auto context_with_thumbnails = c2pa::Context(settings_json2);
 
     // Create builder using context containing settings that does generate thumbnails
     auto builder_with_thumbnail = c2pa::Builder(context_with_thumbnails, manifest);
@@ -2794,7 +2794,7 @@ TEST_F(BuilderTest, TrustHandling)
     // If not, we won't be able to read the manifest as trusted!
     fs::path settings_without_trust_path = current_dir / "../tests/fixtures/settings/test_settings_no_thumbnail.json";
     auto settings_without_trust = c2pa_test::read_text_file(settings_without_trust_path);
-    auto no_trust_context = c2pa::Context::from_json(settings_without_trust);
+    auto no_trust_context = c2pa::Context(settings_without_trust);
 
     auto reader3 = c2pa::Reader(no_trust_context, output_path);
     std::string read_json_manifest3;
@@ -2882,7 +2882,7 @@ TEST_F(BuilderTest, SignWithIStreamAndIOStream_RoundTrip)
 TEST_F(BuilderTest, ArchiveRoundTrip)
 {
     auto manifest = c2pa_test::read_text_file(c2pa_test::get_fixture_path("training.json"));
-    auto context = c2pa::Context::create();
+    auto context = c2pa::Context();
     auto builder1 = c2pa::Builder(context, manifest);
 
     // Export to archive
@@ -2916,7 +2916,7 @@ TEST_F(BuilderTest, ArchiveRoundTripSettingsBehavior)
 
     // Create context with settings that disable thumbnail generation
     auto settings_json = c2pa_test::read_text_file(c2pa_test::get_fixture_path("settings/test_settings_no_thumbnail.json"));
-    auto context_no_thumbnail = c2pa::Context::from_json(settings_json);
+    auto context_no_thumbnail = c2pa::Context(settings_json);
 
     // Verify the setting works when set on builder with context (baseline)
     auto builder_direct = c2pa::Builder(context_no_thumbnail, manifest);
@@ -2929,7 +2929,8 @@ TEST_F(BuilderTest, ArchiveRoundTripSettingsBehavior)
     });
     // Verify no thumbnail in direct sign
     dest_direct.seekg(0);
-    auto reader_direct = c2pa::Reader(c2pa::Context::create(), "image/jpeg", dest_direct);
+    auto ctx_reader_direct = c2pa::Context();
+    auto reader_direct = c2pa::Reader(ctx_reader_direct, "image/jpeg", dest_direct);
     auto json_direct = json::parse(reader_direct.json());
     std::string active_direct = json_direct["active_manifest"];
     EXPECT_FALSE(json_direct["manifests"][active_direct].contains("thumbnail"))
@@ -2955,7 +2956,8 @@ TEST_F(BuilderTest, ArchiveRoundTripSettingsBehavior)
     });
     // Verify manifest structure is preserved
     dest_archive.seekg(0);
-    auto reader_archive = c2pa::Reader(c2pa::Context::create(), "image/jpeg", dest_archive);
+    auto ctx_reader_archive = c2pa::Context();
+    auto reader_archive = c2pa::Reader(ctx_reader_archive, "image/jpeg", dest_archive);
     auto json_archive = json::parse(reader_archive.json());
     EXPECT_TRUE(json_archive.contains("active_manifest"));
 
@@ -2972,7 +2974,7 @@ TEST_F(BuilderTest, ArchiveRoundTripSettingsBehaviorRestoredCOntext)
 
     // Create context with settings that disable thumbnail generation
     auto settings_json = c2pa_test::read_text_file(c2pa_test::get_fixture_path("settings/test_settings_no_thumbnail.json"));
-    auto context_no_thumbnail = c2pa::Context::from_json(settings_json);
+    auto context_no_thumbnail = c2pa::Context(settings_json);
 
     // Verify the setting works when set on builder with context (baseline)
     auto builder_direct = c2pa::Builder(context_no_thumbnail, manifest);
@@ -2985,7 +2987,8 @@ TEST_F(BuilderTest, ArchiveRoundTripSettingsBehaviorRestoredCOntext)
     });
     // Verify no thumbnail is here (aka setting was applied)
     dest_direct.seekg(0);
-    auto reader_direct = c2pa::Reader(c2pa::Context::create(), "image/jpeg", dest_direct);
+    auto ctx_reader_direct = c2pa::Context();
+    auto reader_direct = c2pa::Reader(ctx_reader_direct, "image/jpeg", dest_direct);
     auto json_direct = json::parse(reader_direct.json());
     std::string active_direct = json_direct["active_manifest"];
     EXPECT_FALSE(json_direct["manifests"][active_direct].contains("thumbnail"))
@@ -3011,7 +3014,8 @@ TEST_F(BuilderTest, ArchiveRoundTripSettingsBehaviorRestoredCOntext)
     });
     // Verify manifest structure is preserved
     dest_archive.seekg(0);
-    auto reader_archive = c2pa::Reader(c2pa::Context::create(), "image/jpeg", dest_archive);
+    auto ctx_reader_archive = c2pa::Context();
+    auto reader_archive = c2pa::Reader(ctx_reader_archive, "image/jpeg", dest_archive);
     auto json_archive = json::parse(reader_archive.json());
     EXPECT_TRUE(json_archive.contains("active_manifest"));
 
@@ -3027,7 +3031,7 @@ TEST_F(BuilderTest, LoadArchiveWithContext)
     auto manifest = c2pa_test::read_text_file(c2pa_test::get_fixture_path("training.json"));
 
     // Create a context with thumbnail generation disabled
-    auto context = c2pa::Context::from_json(R"({"builder": {"thumbnail": {"enabled": false}}})");
+    auto context = c2pa::Context(R"({"builder": {"thumbnail": {"enabled": false}}})");
 
     // Create a builder with the custom context
     auto builder1 = c2pa::Builder(context, manifest);
@@ -3044,12 +3048,12 @@ TEST_F(BuilderTest, LoadArchiveWithContext)
 
     // Create a new builder with a context, then load the archive into it
     // This preserves the context's settings (thumbnail=false)
-    auto context2 = c2pa::Context::from_json(R"({"builder": {"thumbnail": {"enabled": false}}})");
+    auto context2 = c2pa::Context(R"({"builder": {"thumbnail": {"enabled": false}}})");
 
     archive_stream.seekg(0);
     c2pa::Builder builder2(context2);  // Create a builder with context
     EXPECT_NO_THROW({
-        builder2.load_archive(archive_stream);  // Load an archive into the builder
+        builder2.to_archive(archive_stream);  // Load an archive into the builder
     });
 
     // Sign with the restored builder (which has thumbnail=false from context2)
@@ -3064,7 +3068,8 @@ TEST_F(BuilderTest, LoadArchiveWithContext)
 
     // Verify the signed asset has NO thumbnail (because context2 had thumbnail=false)
     dest_stream.seekg(0);
-    auto reader = c2pa::Reader(c2pa::Context::create(), "image/jpeg", dest_stream);
+    auto ctx_reader = c2pa::Context();
+    auto reader = c2pa::Reader(ctx_reader, "image/jpeg", dest_stream);
     auto json_result = json::parse(reader.json());
     EXPECT_TRUE(json_result.contains("active_manifest"));
 
@@ -3165,7 +3170,8 @@ TEST_F(BuilderTest, MultipleArchivesAsIngredients)
 
     // Verify all three ingredients are present with correct relationships
     dest_stream.seekg(0);
-    auto reader = c2pa::Reader(c2pa::Context::create(), "image/jpeg", dest_stream);
+    auto ctx_reader = c2pa::Context();
+    auto reader = c2pa::Reader(ctx_reader, "image/jpeg", dest_stream);
     auto json_result = json::parse(reader.json());
     EXPECT_TRUE(json_result.contains("active_manifest"));
 
@@ -3233,7 +3239,8 @@ TEST_F(BuilderTest, AddIngredientFromArchiveStream)
 
     // Verify the ingredient is present
     dest_stream.seekg(0);
-    auto reader = c2pa::Reader(c2pa::Context::create(), "image/jpeg", dest_stream);
+    auto ctx_reader = c2pa::Context();
+    auto reader = c2pa::Reader(ctx_reader, "image/jpeg", dest_stream);
     auto json_result = json::parse(reader.json());
 
     EXPECT_TRUE(json_result.contains("active_manifest"));
@@ -3285,7 +3292,8 @@ TEST_F(BuilderTest, AddIngredientFromArchiveFile)
     });
 
     // Verify the ingredient is present
-    auto reader = c2pa::Reader(c2pa::Context::create(), dest_path);
+    auto ctx_reader = c2pa::Context();
+    auto reader = c2pa::Reader(ctx_reader, dest_path);
     auto json_result = json::parse(reader.json());
 
     EXPECT_TRUE(json_result.contains("active_manifest"));
@@ -3368,7 +3376,8 @@ TEST_F(BuilderTest, AddMultipleArchivesFromArchive)
 
     // Verify all three ingredients are present
     dest_stream.seekg(0);
-    auto reader = c2pa::Reader(c2pa::Context::create(), "image/jpeg", dest_stream);
+    auto ctx_reader = c2pa::Context();
+    auto reader = c2pa::Reader(ctx_reader, "image/jpeg", dest_stream);
     auto json_result = json::parse(reader.json());
 
     EXPECT_TRUE(json_result.contains("active_manifest"));
@@ -3418,7 +3427,7 @@ TEST_F(BuilderTest, WithDefinitionUpdatesManifest) {
     fs::path manifest_path = current_dir / "fixtures/training.json";
 
     auto manifest = c2pa_test::read_text_file(manifest_path);
-    auto context = c2pa::Context::create();
+    auto context = c2pa::Context();
 
     c2pa::Builder builder(context);
     builder.with_definition(manifest);
@@ -3459,7 +3468,7 @@ TEST_F(BuilderTest, WithDefinitionChaining) {
       ]
     })";
     auto updated_manifest = c2pa_test::read_text_file(manifest_path);
-    auto context = c2pa::Context::create();
+    auto context = c2pa::Context();
 
     c2pa::Builder builder(context, initial_manifest);
     builder.with_definition(updated_manifest);
@@ -3490,7 +3499,7 @@ TEST_F(BuilderTest, WithDefinitionChaining) {
 }
 
 TEST_F(BuilderTest, WithDefinitionInvalidJsonThrows) {
-    auto context = c2pa::Context::create();
+    auto context = c2pa::Context();
     c2pa::Builder builder(context);
 
     // Invalid JSON should throw C2paException

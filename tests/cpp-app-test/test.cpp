@@ -60,7 +60,7 @@ int main()
     try
     {
         // Create default context (can be used for basic operations)
-        auto default_context = c2pa::Context::create();
+        auto default_context = c2pa::Context();
 
         std::ifstream ifs("tests/fixtures/C.jpg", std::ios::binary);
         if (!ifs)
@@ -105,7 +105,7 @@ int main()
         std::remove(signed_path);
 
         // Create default context for basic operations
-        auto default_context = c2pa::Context::create();
+        auto default_context = c2pa::Context();
 
         // Create builder with context
         auto builder = c2pa::Builder(default_context, manifest);
@@ -142,7 +142,7 @@ int main()
         const char *signed_path = "target/tmp/C_signed-stream.jpg";
         std::remove(signed_path);
 
-        auto default_context = c2pa::Context::create();
+        auto default_context = c2pa::Context();
         auto builder = c2pa::Builder(default_context, manifest);
 
         std::ifstream source("tests/fixtures/C.jpg", std::ios::binary);
@@ -220,7 +220,7 @@ int main()
         cout << "Read manifest with trust validation" << endl;
 
         // Compare: read without trust context - will only show "Valid" at best
-        auto default_context2 = c2pa::Context::create();
+        auto default_context2 = c2pa::Context();
         auto basic_reader = c2pa::Reader(default_context2, trusted_signed_path);
         string basic_json = basic_reader.json();
 
