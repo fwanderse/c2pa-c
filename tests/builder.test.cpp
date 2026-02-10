@@ -3566,64 +3566,114 @@ TEST_F(BuilderTest, ArchiveToFilePath) {
 }
 
 TEST_F(BuilderTest, ExtractIngredientsFromArchive) {
-    // Helper function to transfer ingredients from an archive to a new builder
-    auto create_builder_with_ingredients_from_archive = [](
-        std::istream& archive_stream,
-        const std::string& base_manifest_json) -> c2pa::Builder {
+    // Note: This test voluntarily does not use any JSON parsing and sticks to string parsing instead. For reasons.
 
-        // Create a Reader from the archive
-        c2pa::Reader reader("application/c2pa", archive_stream);
-        auto json_result = reader.json();
-        
-        // Parse the archive JSON to extract ingredient information
-        auto parsed = json::parse(json_result);
-        std::string active = parsed["active_manifest"];
-        auto ingredients = parsed["manifests"][active]["ingredients"];
-        
-        std::cout << "Transferring " << ingredients.size() << " ingredients from archive" << std::endl;
-        
-        // Create a builder with the ingredients injected into the manifest definition
-        json manifest_json = json::parse(base_manifest_json);
-        manifest_json["ingredients"] = ingredients;
-        c2pa::Builder builder(manifest_json.dump());
-        
-        // Add all referenced resources for each ingredient
-        for (size_t i = 0; i < ingredients.size(); i++) {
-            const auto& ingredient = ingredients[i];
-            std::string title = ingredient["title"];
-            std::cout << "  Processing ingredient " << i << ": " << title << std::endl;
-            
-            // Copy thumbnail resource if present
-            if (ingredient.contains("thumbnail") && ingredient["thumbnail"].contains("identifier")) {
-                std::string thumbnail_id = ingredient["thumbnail"]["identifier"];
-                std::cout << "    Copying thumbnail: " << thumbnail_id << std::endl;
-                
-                std::stringstream thumbnail_stream(std::ios::in | std::ios::out | std::ios::binary);
-                size_t thumbnail_bytes = reader.get_resource(thumbnail_id, thumbnail_stream);
-                std::cout << "    Extracted thumbnail: " << thumbnail_bytes << " bytes" << std::endl;
-                
-                thumbnail_stream.seekg(0);
-                builder.add_resource(thumbnail_id, thumbnail_stream);
+    // Helper: find the matching close bracket/brace for the one at `start`.
+    // Handles nested brackets and JSON string escaping.
+    auto match_bracket = [](const std::string& s, size_t start) -> size_t {
+        char open = s[start];
+        char close = (open == '[') ? ']' : '}';
+        int depth = 1;
+        bool in_string = false;
+        for (size_t i = start + 1; i < s.size(); i++) {
+            if (in_string) {
+                if (s[i] == '\\') { i++; continue; }
+                if (s[i] == '"') in_string = false;
+                continue;
             }
-            
-            // Copy manifest_data resource if present (C2PA-signed ingredients)
-            if (ingredient.contains("manifest_data") &&
-                ingredient["manifest_data"].is_object() &&
-                ingredient["manifest_data"].contains("identifier")) {
-                std::string manifest_data_id = ingredient["manifest_data"]["identifier"];
-                std::cout << "    Copying manifest_data: " << manifest_data_id << std::endl;
-                
-                std::stringstream manifest_data_stream(std::ios::in | std::ios::out | std::ios::binary);
-                size_t manifest_data_bytes = reader.get_resource(manifest_data_id, manifest_data_stream);
-                std::cout << "    Extracted manifest_data: " << manifest_data_bytes << " bytes" << std::endl;
-                
-                manifest_data_stream.seekg(0);
-                builder.add_resource(manifest_data_id, manifest_data_stream);
-            }
+            if (s[i] == '"') { in_string = true; continue; }
+            if (s[i] == open) depth++;
+            if (s[i] == close) { depth--; if (depth == 0) return i; }
         }
-        
-        std::cout << "Successfully transferred all ingredients" << std::endl;
-        return builder;
+        return std::string::npos;
+    };
+
+    // Helper: extract a JSON string value for "key" within s[range_start..range_end).
+    // Finds the first occurrence of "key": "value" and returns value.
+    auto extract_string_value = [](const std::string& s, const std::string& key,
+                                   size_t range_start, size_t range_end) -> std::string {
+        std::string pattern = "\"" + key + "\"";
+        size_t pos = s.find(pattern, range_start);
+        if (pos == std::string::npos || pos >= range_end) return "";
+        // Skip past the key, any whitespace, and the colon
+        size_t after_key = pos + pattern.size();
+        size_t colon = s.find(':', after_key);
+        if (colon == std::string::npos || colon >= range_end) return "";
+        // Find opening quote of value
+        size_t val_start = s.find('"', colon + 1);
+        if (val_start == std::string::npos || val_start >= range_end) return "";
+        size_t val_end = s.find('"', val_start + 1);
+        if (val_end == std::string::npos || val_end >= range_end) return "";
+        return s.substr(val_start + 1, val_end - val_start - 1);
+    };
+
+    // Helper: find all "identifier" string values under a parent key ("thumbnail"
+    // or "manifest_data") within the given range of s.
+    auto find_resource_ids = [&](const std::string& s, const std::string& parent_key,
+                                 size_t range_start, size_t range_end) -> std::vector<std::string> {
+        std::vector<std::string> ids;
+        std::string pattern = "\"" + parent_key + "\"";
+        size_t pos = range_start;
+        while ((pos = s.find(pattern, pos)) != std::string::npos && pos < range_end) {
+            // Find the opening { of this parent object
+            size_t obj_start = s.find('{', pos + pattern.size());
+            if (obj_start == std::string::npos || obj_start >= range_end) break;
+            size_t obj_end = match_bracket(s, obj_start);
+            if (obj_end == std::string::npos || obj_end > range_end) break;
+            // Extract the "identifier" value within this object
+            std::string id = extract_string_value(s, "identifier", obj_start, obj_end + 1);
+            if (!id.empty()) ids.push_back(id);
+            pos = obj_end + 1;
+        }
+        return ids;
+    };
+
+    // Transfer ingredients from a builder archive into a new builder.
+    auto transfer_ingredients_from_archive = [&](
+        std::istream& archive_stream,
+        const std::string& dest_manifest) -> c2pa::Builder {
+
+        // Read the archive
+        c2pa::Reader reader("application/c2pa", archive_stream);
+        std::string reader_json = reader.json();
+
+        // 1. Find the active manifest label
+        std::string active = extract_string_value(reader_json, "active_manifest", 0, reader_json.size());
+
+        // 2. Locate the active manifest object within "manifests"
+        std::string active_key = "\"" + active + "\"";
+        size_t ak_pos = reader_json.find(active_key);
+        size_t m_obj_start = reader_json.find('{', ak_pos + active_key.size());
+        [[maybe_unused]] size_t m_obj_end = match_bracket(reader_json, m_obj_start);
+
+        // 3. Extract the full "ingredients" array as a raw JSON string
+        std::string ing_key = "\"ingredients\"";
+        size_t ik_pos = reader_json.find(ing_key, m_obj_start);
+        size_t arr_start = reader_json.find('[', ik_pos + ing_key.size());
+        size_t arr_end = match_bracket(reader_json, arr_start);
+        std::string ingredients_str = reader_json.substr(arr_start, arr_end - arr_start + 1);
+
+        // 4. Inject the full ingredients array into the destination manifest
+        size_t last_brace = dest_manifest.rfind('}');
+        std::string modified_manifest = dest_manifest.substr(0, last_brace)
+            + ", \"ingredients\": " + ingredients_str + " }";
+
+        c2pa::Builder dest_builder(modified_manifest);
+
+        // 5. Copy all referenced resources (thumbnails, manifest_data) from reader to builder
+        std::vector<std::string> resource_ids;
+        for (const auto& parent : {"thumbnail", "manifest_data"}) {
+            auto ids = find_resource_ids(reader_json, parent, arr_start, arr_end);
+            resource_ids.insert(resource_ids.end(), ids.begin(), ids.end());
+        }
+        for (const auto& id : resource_ids) {
+            std::stringstream resource_stream(std::ios::in | std::ios::out | std::ios::binary);
+            reader.get_resource(id, resource_stream);
+            resource_stream.seekg(0);
+            dest_builder.add_resource(id, resource_stream);
+        }
+
+        return dest_builder;
     };
     auto manifest = c2pa_test::read_text_file(c2pa_test::get_fixture_path("training.json"));
 
@@ -3648,9 +3698,9 @@ TEST_F(BuilderTest, ExtractIngredientsFromArchive) {
     // Skip verification since archives have placeholder signatures
     c2pa::load_settings(R"({"verify": {"verify_after_reading": false}})", "json");
 
-    // Use the helper function to create a builder with ingredients from the archive
+    // Use the helper function to transfer ingredients from the archive into a new builder
     archive_stream.seekg(0);
-    auto merged_builder = create_builder_with_ingredients_from_archive(archive_stream, manifest);
+    auto merged_builder = transfer_ingredients_from_archive(archive_stream, manifest);
 
     // Sign the merged builder
     auto signer = c2pa_test::create_test_signer();
@@ -3666,8 +3716,6 @@ TEST_F(BuilderTest, ExtractIngredientsFromArchive) {
     // Read and log the merged builder's manifest JSON
     auto merged_reader = c2pa::Reader(output_path);
     auto merged_json = merged_reader.json();
-    std::cout << "\n=== Merged Builder Manifest JSON ===" << std::endl;
-    std::cout << merged_json << std::endl;
 
     // Verify all 3 ingredients are present in the merged builder
     auto merged_parsed = json::parse(merged_json);
