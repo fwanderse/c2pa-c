@@ -215,8 +215,8 @@ int main()
         auto trusted_reader = c2pa::Reader(trusted_context, trusted_signed_path);
         string trusted_json = trusted_reader.json();
 
-        // Note: In a real scenario with valid trust chain, this would show "Trusted"
-        // For test fixtures, it may show as "Valid" depending on the certificate chain
+        // In a scenario with valid trust chain, this would show "Trusted"
+        // For test fixtures, it may show as "Valid" depending on the configured certificate chain
         cout << "Read manifest with trust validation" << endl;
 
         // Compare: read without trust context - will only show "Valid" at best
@@ -237,22 +237,17 @@ int main()
     }
 
     // ========================================================================
-    // Example 5: Context with custom settings
+    // Example 5: Context with settings
     // ========================================================================
     cout << "\n--- Example 5: Context with custom settings ---" << endl;
     try
     {
         // Build context using ContextBuilder for fine-grained control
         auto settings_json = R"({
-            "verify": {
-                "verify_after_sign": true,
-                "verify_after_reading": true
-            },
             "builder": {
-                "intent": "edit",
                 "claim_generator_info": {
                     "name": "C2PA C++ SDK Example",
-                    "version": "1.0.0"
+                    "version": "0.1.0"
                 }
             }
         })";
@@ -261,14 +256,9 @@ int main()
             .with_json(settings_json)
             .create_context();
 
-        cout << "Created context with custom settings via builder pattern" << endl;
-
         // Use this context for operations that need specific configuration
         char *manifest = load_file("tests/fixtures/training.json");
         auto builder = c2pa::Builder(custom_context, manifest);
-
-        // Builder now has custom settings applied
-        cout << "Builder created with custom context settings" << endl;
 
         free(manifest);
     }
