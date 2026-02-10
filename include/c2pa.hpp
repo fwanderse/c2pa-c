@@ -236,7 +236,7 @@ namespace c2pa
             /// @throws C2paException if JSON is invalid.
             ContextBuilder& with_json(const std::string& json);
 
-            /// @brief Create an immutable Context from the current builder configuration.
+            /// @brief Create a Context from the current builder configuration.
             /// @return Shared pointer to the new Context.
             /// @throws C2paException if context creation fails.
             /// @note This consumes the builder. After calling this, is_valid() returns false.
