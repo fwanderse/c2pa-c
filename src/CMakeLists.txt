@@ -167,11 +167,11 @@ option(C2PA_UNITY_BUILD "Use single c2pa.cpp unity build instead of split files"
 
 # Define the C++ library and add sources
 if(C2PA_UNITY_BUILD)
-    # Unity build - single file for backward compatibility and faster compilation
+    # Unity build: single file for backward compatibility  with older builds
     message(STATUS "Using unity build (c2pa.cpp)")
     add_library(c2pa_cpp STATIC c2pa.cpp)
 else()
-    # Split build - multiple files for better maintainability and incremental builds
+    # Split build: multiple files for incremental builds
     message(STATUS "Using split build (c2pa_*.cpp files)")
     add_library(c2pa_cpp STATIC
         c2pa_core.cpp

@@ -26,7 +26,7 @@ The C2PA C++ implementation is organized into multiple source files for better m
 
 ## Build Options
 
-### Default: Split Build (Recommended for Development)
+### Default: Split Build
 By default, the library is built from individual source files for better:
 - Incremental compilation (faster rebuilds when changing a single file)
 - Parallel compilation across multiple cores
@@ -38,7 +38,7 @@ cmake --build build
 ```
 
 ### Unity Build (For Distribution)
-For users who only have `c2pa.cpp` (e.g., from Artifactory):
+For users who only have `c2pa.cpp`:
 
 ```bash
 cmake -S . -B build -DC2PA_UNITY_BUILD=ON
@@ -57,24 +57,9 @@ In unity build mode, all implementation is compiled through a single standalone 
 5. Upload standalone `c2pa.cpp` to Artifactory
 
 ### Important Notes
-- **`c2pa.cpp` is auto-generated** - do not edit it manually
+- **`c2pa.cpp` is auto-generated**: do not edit it manually
 - Always regenerate `c2pa.cpp` after making changes to split files
 - The generation script concatenates all split files into a single standalone file
-
-## Advantages of Each Approach
-
-**Split Build (Development):**
-- ✅ Faster incremental builds
-- ✅ Better parallel compilation
-- ✅ Easier to navigate and maintain
-- ✅ One class per file
-- ✅ Recommended for active development
-
-**Unity Build (Distribution):**
-- ✅ Single standalone file - no dependencies on split files
-- ✅ Works with existing artifact repositories (Artifactory)
-- ✅ Simpler for users who just want to compile
-- ✅ May enable more compiler optimizations
 
 ## API Compatibility
 
