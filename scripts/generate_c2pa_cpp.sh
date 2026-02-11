@@ -75,7 +75,7 @@ echo "// Internal detail namespace (from c2pa_internal.hpp)" >> "$OUTPUT_FILE"
 echo "// ============================================================================" >> "$OUTPUT_FILE"
 echo "" >> "$OUTPUT_FILE"
 
-# Extract detail namespace from internal header (skip copyright, guards, and includes)
+# Extract detail namespace from internal header
 awk '
     BEGIN { in_content=0 }
     /^#include/ { next }
@@ -96,5 +96,5 @@ for file in c2pa_core.cpp c2pa_settings.cpp c2pa_context.cpp c2pa_streams.cpp c2
     echo "" >> "$OUTPUT_FILE"
 done
 
-echo "✓ Generated $OUTPUT_FILE"
-echo "  This file can be distributed standalone without the split source files."
+echo "Generated $OUTPUT_FILE"
+echo "This file can be distributed standalone as c2pa.cpp"

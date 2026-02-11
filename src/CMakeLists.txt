@@ -167,9 +167,36 @@ option(C2PA_UNITY_BUILD "Use single c2pa.cpp unity build instead of split files"
 
 # Define the C++ library and add sources
 if(C2PA_UNITY_BUILD)
-    # Unity build: single file for backward compatibility  with older builds
+    # Unity build: single file for backward compatibility with older builds
     message(STATUS "Using unity build (c2pa.cpp)")
-    add_library(c2pa_cpp STATIC c2pa.cpp)
+    
+    # Generate the standalone c2pa.cpp file from split sources
+    set(GENERATED_C2PA_CPP "${CMAKE_CURRENT_SOURCE_DIR}/c2pa.cpp")
+    set(GENERATE_SCRIPT "${CMAKE_SOURCE_DIR}/scripts/generate_c2pa_cpp.sh")
+    
+    # List all source files that the generated file depends on
+    set(SPLIT_SOURCE_FILES
+        "${CMAKE_CURRENT_SOURCE_DIR}/c2pa_internal.hpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/c2pa_core.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/c2pa_settings.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/c2pa_context.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/c2pa_streams.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/c2pa_reader.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/c2pa_signer.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/c2pa_builder.cpp"
+    )
+    
+    # Add custom command to generate c2pa.cpp
+    add_custom_command(
+        OUTPUT "${GENERATED_C2PA_CPP}"
+        COMMAND "${GENERATE_SCRIPT}"
+        DEPENDS ${SPLIT_SOURCE_FILES} "${GENERATE_SCRIPT}"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        COMMENT "Generating standalone c2pa.cpp from split source files"
+        VERBATIM
+    )
+    
+    add_library(c2pa_cpp STATIC "${GENERATED_C2PA_CPP}")
 else()
     # Split build: multiple files for incremental builds
     message(STATUS "Using split build (c2pa_*.cpp files)")

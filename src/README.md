@@ -22,11 +22,11 @@ The C2PA C++ implementation is organized into multiple source files for better m
 - **`c2pa_builder.cpp`** - Builder class implementation
 
 #### Generated Standalone File (for distribution)
-- **`c2pa.cpp`** - **Auto-generated** standalone file containing all implementation code inline
+- **`c2pa.cpp`** - **Auto-generated during unity build** - standalone file containing all implementation code inline
 
 ## Build Options
 
-### Default: Split Build
+### Default: Split Build (Recommended for Development)
 By default, the library is built from individual source files for better:
 - Incremental compilation (faster rebuilds when changing a single file)
 - Parallel compilation across multiple cores
@@ -38,28 +38,32 @@ cmake --build build
 ```
 
 ### Unity Build (For Distribution)
-For users who only have `c2pa.cpp`:
+Automatically generates and compiles a single standalone `c2pa.cpp` file:
 
 ```bash
 cmake -S . -B build -DC2PA_UNITY_BUILD=ON
 cmake --build build
 ```
 
-In unity build mode, all implementation is compiled through a single standalone `c2pa.cpp` file.
+In unity build mode:
+- CMake auto-generates `src/c2pa.cpp` from all split source files
+- The generated file is compiled as a single compilation unit
+- The file is created during the build and placed in `src/`
+- Perfect for distributing to artifact repositories like Artifactory
 
 ## Development Workflow
 
 ### Making Changes
 1. Edit the relevant `c2pa_*.cpp` files (never edit `c2pa.cpp` directly)
 2. Test with split build: `make` or `cmake --build build`
-3. Generate standalone `c2pa.cpp` for distribution: `./scripts/generate_c2pa_cpp.sh`
-4. Test unity build: `cmake -DC2PA_UNITY_BUILD=ON ...`
-5. Upload standalone `c2pa.cpp` to Artifactory
+3. Build with unity mode to generate `c2pa.cpp`: `cmake -DC2PA_UNITY_BUILD=ON -B build/unity && cmake --build build/unity`
+4. The generated `src/c2pa.cpp` can be uploaded to Artifactory for users who need a single file
 
 ### Important Notes
-- **`c2pa.cpp` is auto-generated**: do not edit it manually
-- Always regenerate `c2pa.cpp` after making changes to split files
-- The generation script concatenates all split files into a single standalone file
+- **`c2pa.cpp` is auto-generated during unity build** - do not edit it manually
+- The file is listed in `.gitignore` and should not be checked into version control
+- Unity build automatically regenerates `c2pa.cpp` from split files when any source changes
+- No manual script execution needed - CMake handles everything
 
 ## API Compatibility
 
