@@ -953,6 +953,8 @@ inline std::vector<unsigned char> to_byte_vector(const unsigned char* data, int6
 
     Builder& Builder::with_definition(const std::string &manifest_json)
     {
+        // c2pa_builder_with_definition consumes the builder pointer,
+        // so the original pointer is invalid after the call.
         C2paBuilder* updated = c2pa_builder_with_definition(builder, manifest_json.c_str());
         builder = nullptr;
         if (updated == nullptr) {
