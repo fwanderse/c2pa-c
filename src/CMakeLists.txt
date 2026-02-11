@@ -162,16 +162,27 @@ else()
     endif()
 endif()
 
+# Option for unity build (single c2pa.cpp) vs split build (multiple files)
+option(C2PA_UNITY_BUILD "Use single c2pa.cpp unity build instead of split files" OFF)
+
 # Define the C++ library and add sources
-add_library(c2pa_cpp STATIC
-    c2pa_core.cpp
-    c2pa_settings.cpp
-    c2pa_context.cpp
-    c2pa_streams.cpp
-    c2pa_reader.cpp
-    c2pa_signer.cpp
-    c2pa_builder.cpp
-)
+if(C2PA_UNITY_BUILD)
+    # Unity build - single file for backward compatibility and faster compilation
+    message(STATUS "Using unity build (c2pa.cpp)")
+    add_library(c2pa_cpp STATIC c2pa.cpp)
+else()
+    # Split build - multiple files for better maintainability and incremental builds
+    message(STATUS "Using split build (c2pa_*.cpp files)")
+    add_library(c2pa_cpp STATIC
+        c2pa_core.cpp
+        c2pa_settings.cpp
+        c2pa_context.cpp
+        c2pa_streams.cpp
+        c2pa_reader.cpp
+        c2pa_signer.cpp
+        c2pa_builder.cpp
+    )
+endif()
 
 # Set compiler-specific flags for the C++ library
 if(MSVC)
