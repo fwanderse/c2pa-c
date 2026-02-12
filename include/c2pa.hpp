@@ -79,6 +79,7 @@ namespace c2pa
     }
 
     /// @brief Exception class for C2PA library errors.
+    /// This class is used to throw exceptions for errors encountered by the C2pa library via c2pa_error().
     class C2PA_CPP_API C2paException : public std::exception
     {
     public:
@@ -216,7 +217,7 @@ namespace c2pa
         [[nodiscard]] bool is_valid() const noexcept;
 
         /// @brief Set a single configuration value by path.
-        /// @param path Dot-separated path to the setting (e.g., "verify.verify_after_sign").
+        /// @param path Dot-separated path to the setting.
         /// @param json_value JSON-encoded value to set.
         /// @return Reference to this Settings for method chaining.
         /// @throws C2paException if the path or value is invalid.
@@ -363,7 +364,7 @@ namespace c2pa
     };
 
     /// @brief Get the version of the C2PA library.
-    /// @return Version string (e.g., "0.31.2").
+    /// @return Version string.
     std::string C2PA_CPP_API version();
 
     /// @brief Load C2PA settings from a string in a given format.
@@ -418,6 +419,7 @@ namespace c2pa
     /// - flusher(context): flush; return 0 on success, -1 on error (set errno).
 
     /// @brief Input stream wrapper for C2paStream.
+    /// @details This class is used to wrap an input stream for use with the C2PA library.
     class C2PA_CPP_API CppIStream : public C2paStream
     {
     public:
@@ -479,6 +481,7 @@ namespace c2pa
     };
 
     /// @brief Output stream wrapper for C2paStream.
+    /// @details This class is used to wrap an output stream for use with the C2PA library.
     class C2PA_CPP_API CppOStream : public C2paStream
     {
     public:
@@ -536,7 +539,8 @@ namespace c2pa
         static intptr_t flusher(StreamContext *context);
     };
 
-    /// @brief Input/output stream wrapper for C2paStream.
+    /// @brief IOStream Class wrapper for C2paStream.
+    /// @details This class is used to wrap an input/output stream for use with the C2PA library.
     class C2PA_CPP_API CppIOStream : public C2paStream
     {
     public:
@@ -608,7 +612,7 @@ namespace c2pa
     public:
         /// @brief Create a Reader from a context and stream.
         /// @param context Context provider; used at construction to configure settings.
-        /// @param format The MIME format of the stream (e.g., "image/jpeg").
+        /// @param format The mime format of the stream.
         /// @param stream The input stream to read from.
         /// @throws C2paException if context.is_valid() returns false,
         ///         or for other errors encountered by the C2PA library.
@@ -624,7 +628,7 @@ namespace c2pa
 
         /// @brief Create a Reader from a stream (will use global settings if any loaded).
         /// @details The validation_status field in the JSON contains validation results.
-        /// @param format The MIME format of the stream (e.g., "image/jpeg").
+        /// @param format The mime format of the stream.
         /// @param stream The input stream to read from.
         /// @throws C2paException for errors encountered by the C2PA library.
         /// @deprecated Use Reader(IContextProvider& context, format, stream) instead.
@@ -639,6 +643,7 @@ namespace c2pa
         [[deprecated("Use Reader(IContextProvider& context, source_path) instead")]]
         Reader(const std::filesystem::path &source_path);
 
+        // Non-copyable
         Reader(const Reader&) = delete;
 
         Reader& operator=(const Reader&) = delete;
@@ -707,8 +712,8 @@ namespace c2pa
         /// @note This is intended for internal API use and compatibility with C APIs.
         C2paReader* get_api_internal_raw_reader() const { return c2pa_reader; }
 
-        /// @brief Get a list of MIME types that the SDK can read manifests from.
-        /// @return Vector of supported MIME type strings (e.g., "image/jpeg", "image/png").
+        /// @brief Get a list of mime types that the SDK can read manifests from.
+        /// @return Vector of supported MIME type strings.
         static std::vector<std::string> supported_mime_types();
     };
 
@@ -719,7 +724,7 @@ namespace c2pa
     /// @return The signature as a vector of bytes.
     using SignerFunc = std::vector<unsigned char>(const std::vector<unsigned char> &);
 
-    /// @brief Signer class for creating and managing digital signatures.
+    /// @brief Signer class for creating a Signer
     /// @details This class is used to create a signer from a signing algorithm, certificate, and TSA URI.
     ///          Supports both callback-based and direct signing methods.
     class C2PA_CPP_API Signer
@@ -782,7 +787,7 @@ namespace c2pa
 
         ~Signer();
 
-        /// @brief Get the size to reserve for a signature.
+        /// @brief Get the size to reserve for a signature for this Signer.
         /// @return Reserved size for the signature in bytes.
         uintptr_t reserve_size();
 
@@ -859,7 +864,7 @@ namespace c2pa
         void set_no_embed();
 
         /// @brief Set the remote URL where the manifest will be hosted.
-        /// @param remote_url The remote URL to set (e.g., "https://example.com/manifest.c2pa").
+        /// @param remote_url The remote URL to set.
         /// @throws C2paException for errors encountered by the C2PA library.
         void set_remote_url(const std::string &remote_url);
 
@@ -873,7 +878,7 @@ namespace c2pa
         void set_base_path(const std::string &base_path);
 
         /// @brief Add a resource to the builder from a stream.
-        /// @param uri The URI identifier for the resource (e.g., "self#jumbf=c2pa.assertions/thumbnail").
+        /// @param uri The URI identifier for the resource.
         /// @param source The input stream to read the resource from.
         /// @throws C2paException for errors encountered by the C2PA library.
         void add_resource(const std::string &uri, std::istream &source);
@@ -886,26 +891,26 @@ namespace c2pa
         void add_resource(const std::string &uri, const std::filesystem::path &source_path);
 
         /// @brief Add an ingredient to the builder from a stream.
-        /// @param ingredient_json JSON string with ingredient metadata fields.
-        /// @param format The MIME format of the ingredient file (e.g., "image/jpeg").
+        /// @param ingredient_json Any fields of the ingredient you want to define.
+        /// @param format The mime format of the ingredient.
         /// @param source The input stream to read the ingredient from.
         /// @throws C2paException for errors encountered by the C2PA library.
         void add_ingredient(const std::string &ingredient_json, const std::string &format, std::istream &source);
 
         /// @brief Add an ingredient to the builder from a file.
-        /// @param ingredient_json JSON string with ingredient metadata fields.
+        /// @param ingredient_json Any fields of the ingredient you want to define.
         /// @param source_path The path to the ingredient file.
         /// @throws C2paException for errors encountered by the C2PA library.
         /// @note Prefer using the streaming APIs if possible.
         void add_ingredient(const std::string &ingredient_json, const std::filesystem::path &source_path);
 
         /// @brief Add an action to the manifest.
-        /// @param action_json JSON string containing the action data (e.g., action type and parameters).
+        /// @param action_json JSON string containing the action data.
         /// @throws C2paException for errors encountered by the C2PA library.
         void add_action(const std::string &action_json);
 
         /// @brief Sign an input stream and write the signed data to an output stream.
-        /// @param format The MIME format of the output (e.g., "image/jpeg").
+        /// @param format The mime format of the output.
         /// @param source The input stream to sign.
         /// @param dest The output stream to write the signed data to.
         /// @param signer The signer object to use for signing.
@@ -915,7 +920,7 @@ namespace c2pa
         std::vector<unsigned char> sign(const std::string &format, std::istream &source, std::ostream &dest, Signer &signer);
 
         /// @brief Sign an input stream and write the signed data to an I/O stream.
-        /// @param format The MIME format of the output (e.g., "image/jpeg").
+        /// @param format The mime format of the output.
         /// @param source The input stream to sign.
         /// @param dest The I/O stream to write the signed data to.
         /// @param signer The signer object to use for signing.
@@ -966,7 +971,7 @@ namespace c2pa
 
         /// @brief Create a hashed placeholder from the builder.
         /// @param reserved_size The size required for a signature from the intended signer (in bytes).
-        /// @param format The MIME format or extension of the asset (e.g., "image/jpeg").
+        /// @param format The mime format or extension of the asset.
         /// @return A vector containing the hashed placeholder bytes.
         /// @throws C2paException for errors encountered by the C2PA library.
         std::vector<unsigned char> data_hashed_placeholder(uintptr_t reserved_size, const std::string &format);
@@ -974,20 +979,20 @@ namespace c2pa
         /// @brief Sign a Builder using data hashing.
         /// @param signer The signer to use for signing.
         /// @param data_hash The data hash ranges to sign (must contain hashes unless an asset is provided).
-        /// @param format The MIME format for embedding. Use "c2pa" for an unformatted result.
+        /// @param format The mime format for embedding. Use "c2pa" for an unformatted result.
         /// @param asset Optional asset to hash according to the data_hash information.
         /// @return A vector containing the signed embeddable data.
         /// @throws C2paException for errors encountered by the C2PA library.
         std::vector<unsigned char> sign_data_hashed_embeddable(Signer &signer, const std::string &data_hash, const std::string &format, std::istream *asset = nullptr);
 
         /// @brief Convert unformatted manifest data to an embeddable format.
-        /// @param format The format for embedding (e.g., "image/jpeg").
+        /// @param format The format for embedding.
         /// @param data Unformatted manifest data from sign_data_hashed_embeddable using "c2pa" format.
         /// @return A formatted copy of the data ready for embedding.
         static std::vector<unsigned char> format_embeddable(const std::string &format, std::vector<unsigned char> &data);
 
-        /// @brief Get a list of MIME types that the SDK can sign.
-        /// @return Vector of supported MIME type strings (e.g., "image/jpeg", "video/mp4").
+        /// @brief Get a list of mime types that the Builder supports.
+        /// @return Vector of supported MIME type strings.
         static std::vector<std::string> supported_mime_types();
 
     private:
