@@ -78,7 +78,7 @@ namespace c2pa
         return static_cast<int>(OperationResult::Error);
     }
 
-    /// @brief Exception class for C2PA library errors.
+    /// @brief Exception class for C2pa errors.
     /// This class is used to throw exceptions for errors encountered by the C2pa library via c2pa_error().
     class C2PA_CPP_API C2paException : public std::exception
     {
@@ -217,7 +217,7 @@ namespace c2pa
         [[nodiscard]] bool is_valid() const noexcept;
 
         /// @brief Set a single configuration value by path.
-        /// @param path Dot-separated path to the setting.
+        /// @param path Dot-separated path to the setting (e.g., "verify.verify_after_sign").
         /// @param json_value JSON-encoded value to set.
         /// @return Reference to this Settings for method chaining.
         /// @throws C2paException if the path or value is invalid.
@@ -418,7 +418,7 @@ namespace c2pa
     /// - seeker(context, offset, whence): seek to offset (whence = Start/Current/End); return new position or -1 (set errno).
     /// - flusher(context): flush; return 0 on success, -1 on error (set errno).
 
-    /// @brief Input stream wrapper for C2paStream.
+    /// @brief Input stream IStream wrapper for C2paStream.
     /// @details This class is used to wrap an input stream for use with the C2PA library.
     class C2PA_CPP_API CppIStream : public C2paStream
     {
@@ -480,7 +480,7 @@ namespace c2pa
         friend class Reader;
     };
 
-    /// @brief Output stream wrapper for C2paStream.
+    /// @brief Output stream OStream wrapper for C2paStream.
     /// @details This class is used to wrap an output stream for use with the C2PA library.
     class C2PA_CPP_API CppOStream : public C2paStream
     {
@@ -693,7 +693,7 @@ namespace c2pa
         std::string json() const;
 
         /// @brief Get a resource from the reader and write it to a file.
-        /// @param uri The URI of the resource to retrieve.
+        /// @param uri The URI of the resource.
         /// @param path The file path to write the resource to.
         /// @return The number of bytes written.
         /// @throws C2paException for errors encountered by the C2PA library.
@@ -701,7 +701,7 @@ namespace c2pa
         int64_t get_resource(const std::string &uri, const std::filesystem::path &path);
 
         /// @brief Get a resource from the reader and write it to an output stream.
-        /// @param uri The URI of the resource to retrieve.
+        /// @param uri The URI of the resource.
         /// @param stream The output stream to write the resource to.
         /// @return The number of bytes written.
         /// @throws C2paException for errors encountered by the C2PA library.
