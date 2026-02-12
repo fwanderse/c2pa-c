@@ -163,9 +163,9 @@ else()
 endif()
 
 # ---------------------------------------------------------------------------
-# Amalgamation: generate a single c2pa.cpp at build time from split sources.
-# We copy the unity file to c2pa.cpp so downstream still compiles one TU and
-# one file name. No preprocessor expansion (avoids pulling in system headers).
+# Amalgamation: generate a single, complete, compilable c2pa.cpp at build time.
+# Parts are concatenated into one file so downstream users can
+# compile it with only c2pa.hpp in the include path.
 # ---------------------------------------------------------------------------
 set(C2PA_CPP_PARTS
     c2pa_core.cpp
@@ -176,12 +176,19 @@ set(C2PA_CPP_PARTS
     c2pa_signer.cpp
     c2pa_streams.cpp
 )
-set(C2PA_AMALGAM_SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/c2pa_amalgam.cpp")
 set(C2PA_AMALGAM_OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/c2pa.cpp")
+set(C2PA_AMALGAM_SCRIPT "${CMAKE_SOURCE_DIR}/scripts/amalgamate.cmake")
+set(C2PA_AMALGAM_PARTS_FILE "${CMAKE_CURRENT_BINARY_DIR}/amalgam_parts.txt")
 
-# Regenerate c2pa.cpp when amalgam file or any part changes
+# Write part list to a file so the script gets it reliably (avoids command-line list mangling)
+list(JOIN C2PA_CPP_PARTS "\n" C2PA_CPP_PARTS_LINES)
+file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
+file(WRITE "${C2PA_AMALGAM_PARTS_FILE}" "${C2PA_CPP_PARTS_LINES}\n")
+
+# Regenerate c2pa.cpp when any part or header changes
 set(C2PA_AMALGAM_DEPENDS
-    ${C2PA_AMALGAM_SOURCE}
+    ${C2PA_AMALGAM_SCRIPT}
+    ${C2PA_AMALGAM_PARTS_FILE}
     ${CMAKE_CURRENT_SOURCE_DIR}/c2pa_internal.hpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../include/c2pa.hpp
 )
@@ -191,9 +198,13 @@ endforeach()
 
 add_custom_command(
     OUTPUT "${C2PA_AMALGAM_OUTPUT}"
-    COMMAND ${CMAKE_COMMAND} -E copy "${C2PA_AMALGAM_SOURCE}" "${C2PA_AMALGAM_OUTPUT}"
+    COMMAND ${CMAKE_COMMAND}
+        -DC2PA_SOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}
+        -DC2PA_AMALGAM_OUTPUT=${C2PA_AMALGAM_OUTPUT}
+        -DC2PA_CPP_PARTS_FILE=${C2PA_AMALGAM_PARTS_FILE}
+        -P "${C2PA_AMALGAM_SCRIPT}"
     DEPENDS ${C2PA_AMALGAM_DEPENDS}
-    COMMENT "Generating amalgamated c2pa.cpp"
+    COMMENT "Generating amalgamated c2pa.cpp (complete, compilable single file)"
     VERBATIM
 )
 
