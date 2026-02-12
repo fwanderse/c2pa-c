@@ -177,7 +177,8 @@ set(C2PA_CPP_PARTS
     c2pa_streams.cpp
 )
 set(C2PA_AMALGAM_OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/c2pa.cpp")
-set(C2PA_AMALGAM_SCRIPT "${CMAKE_SOURCE_DIR}/scripts/amalgamate.cmake")
+# Path to script in this repo (works when built standalone or via FetchContent)
+set(C2PA_AMALGAM_SCRIPT "${CMAKE_CURRENT_SOURCE_DIR}/../scripts/amalgamate.cmake")
 set(C2PA_AMALGAM_PARTS_FILE "${CMAKE_CURRENT_BINARY_DIR}/amalgam_parts.txt")
 
 # Write part list to a file so the script gets it reliably (avoids command-line list mangling)
