@@ -162,54 +162,43 @@ else()
     endif()
 endif()
 
-# Option for unity build (single c2pa.cpp) vs split build (multiple files)
-option(C2PA_UNITY_BUILD "Use single c2pa.cpp unity build instead of split files" OFF)
+# ---------------------------------------------------------------------------
+# Amalgamation: generate a single c2pa.cpp at build time from split sources.
+# We copy the unity file to c2pa.cpp so downstream still compiles one TU and
+# one file name. No preprocessor expansion (avoids pulling in system headers).
+# ---------------------------------------------------------------------------
+set(C2PA_CPP_PARTS
+    c2pa_core.cpp
+    c2pa_context.cpp
+    c2pa_builder.cpp
+    c2pa_reader.cpp
+    c2pa_settings.cpp
+    c2pa_signer.cpp
+    c2pa_streams.cpp
+)
+set(C2PA_AMALGAM_SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/c2pa_amalgam.cpp")
+set(C2PA_AMALGAM_OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/c2pa.cpp")
 
-# Define the C++ library and add sources
-if(C2PA_UNITY_BUILD)
-    # Unity build: single file for backward compatibility with older builds
-    message(STATUS "Using unity build (c2pa.cpp)")
-    
-    # Generate the standalone c2pa.cpp file from split sources
-    set(GENERATED_C2PA_CPP "${CMAKE_CURRENT_SOURCE_DIR}/c2pa.cpp")
-    set(GENERATE_SCRIPT "${CMAKE_SOURCE_DIR}/scripts/generate_c2pa_cpp.sh")
-    
-    # List all source files that the generated file depends on
-    set(SPLIT_SOURCE_FILES
-        "${CMAKE_CURRENT_SOURCE_DIR}/c2pa_internal.hpp"
-        "${CMAKE_CURRENT_SOURCE_DIR}/c2pa_core.cpp"
-        "${CMAKE_CURRENT_SOURCE_DIR}/c2pa_settings.cpp"
-        "${CMAKE_CURRENT_SOURCE_DIR}/c2pa_context.cpp"
-        "${CMAKE_CURRENT_SOURCE_DIR}/c2pa_streams.cpp"
-        "${CMAKE_CURRENT_SOURCE_DIR}/c2pa_reader.cpp"
-        "${CMAKE_CURRENT_SOURCE_DIR}/c2pa_signer.cpp"
-        "${CMAKE_CURRENT_SOURCE_DIR}/c2pa_builder.cpp"
-    )
-    
-    # Add custom command to generate c2pa.cpp
-    add_custom_command(
-        OUTPUT "${GENERATED_C2PA_CPP}"
-        COMMAND "${GENERATE_SCRIPT}"
-        DEPENDS ${SPLIT_SOURCE_FILES} "${GENERATE_SCRIPT}"
-        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
-        COMMENT "Generating standalone c2pa.cpp from split source files"
-        VERBATIM
-    )
-    
-    add_library(c2pa_cpp STATIC "${GENERATED_C2PA_CPP}")
-else()
-    # Split build: multiple files for incremental builds
-    message(STATUS "Using split build (c2pa_*.cpp files)")
-    add_library(c2pa_cpp STATIC
-        c2pa_core.cpp
-        c2pa_settings.cpp
-        c2pa_context.cpp
-        c2pa_streams.cpp
-        c2pa_reader.cpp
-        c2pa_signer.cpp
-        c2pa_builder.cpp
-    )
-endif()
+# Regenerate c2pa.cpp when amalgam file or any part changes
+set(C2PA_AMALGAM_DEPENDS
+    ${C2PA_AMALGAM_SOURCE}
+    ${CMAKE_CURRENT_SOURCE_DIR}/c2pa_internal.hpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../include/c2pa.hpp
+)
+foreach(part ${C2PA_CPP_PARTS})
+    list(APPEND C2PA_AMALGAM_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/${part}")
+endforeach()
+
+add_custom_command(
+    OUTPUT "${C2PA_AMALGAM_OUTPUT}"
+    COMMAND ${CMAKE_COMMAND} -E copy "${C2PA_AMALGAM_SOURCE}" "${C2PA_AMALGAM_OUTPUT}"
+    DEPENDS ${C2PA_AMALGAM_DEPENDS}
+    COMMENT "Generating amalgamated c2pa.cpp"
+    VERBATIM
+)
+
+# Define the C++ library using the generated unity source (one TU)
+add_library(c2pa_cpp STATIC "${C2PA_AMALGAM_OUTPUT}")
 
 # Set compiler-specific flags for the C++ library
 if(MSVC)
@@ -265,6 +254,9 @@ target_include_directories(c2pa_cpp
         $<BUILD_INTERFACE:${c2pa-c_SOURCE_DIR}/include>
         $<BUILD_INTERFACE:${C2PA_INCLUDE_DIR}>
         $<INSTALL_INTERFACE:include>
+    PRIVATE
+        # So generated c2pa.cpp can find part files (c2pa_core.cpp etc.)
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
 )
 
 # Add dependency on build_c2pa_c if building from source
