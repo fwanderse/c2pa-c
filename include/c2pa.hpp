@@ -79,8 +79,6 @@ namespace c2pa
     }
 
     /// @brief Exception class for C2PA library errors.
-    /// @details This class is used to throw exceptions for errors encountered by the C2PA library via c2pa_error().
-    ///          Derives from std::exception and provides error message retrieval.
     class C2PA_CPP_API C2paException : public std::exception
     {
     public:
@@ -370,7 +368,7 @@ namespace c2pa
 
     /// @brief Load C2PA settings from a string in a given format.
     /// @param data The configuration data to load.
-    /// @param format The MIME format of the string (e.g., "json", "toml").
+    /// @param format The mimetype of the string.
     /// @throws C2paException for errors encountered by the C2PA library.
     /// @deprecated Use Context constructors or Context::ContextBuilder instead for better thread safety.
     [[deprecated("Use Context::from_json() or Context::from_settings() instead")]]
@@ -420,8 +418,6 @@ namespace c2pa
     /// - flusher(context): flush; return 0 on success, -1 on error (set errno).
 
     /// @brief Input stream wrapper for C2paStream.
-    /// @details This class wraps a C++ std::istream-derived object for use with the C2PA C API.
-    ///          Implements the C2paStream interface with read and seek operations.
     class C2PA_CPP_API CppIStream : public C2paStream
     {
     public:
@@ -442,19 +438,14 @@ namespace c2pa
             }
         }
 
-        /// @brief Copy constructor (deleted - non-copyable).
         CppIStream(const CppIStream &) = delete;
 
-        /// @brief Copy assignment operator (deleted - non-copyable).
         CppIStream &operator=(const CppIStream &) = delete;
 
-        /// @brief Move constructor (deleted - non-moveable).
         CppIStream(CppIStream &&) = delete;
 
-        /// @brief Move assignment operator (deleted - non-moveable).
         CppIStream &operator=(CppIStream &&) = delete;
 
-        /// @brief Destructor - releases C stream resources.
         ~CppIStream();
 
     private:
@@ -488,8 +479,6 @@ namespace c2pa
     };
 
     /// @brief Output stream wrapper for C2paStream.
-    /// @details This class wraps a C++ std::ostream-derived object for use with the C2PA C API.
-    ///          Implements the C2paStream interface with write, seek, and flush operations.
     class C2PA_CPP_API CppOStream : public C2paStream
     {
     public:
@@ -509,19 +498,14 @@ namespace c2pa
             }
         }
 
-        /// @brief Copy constructor (deleted - non-copyable).
         CppOStream(const CppOStream &) = delete;
 
-        /// @brief Copy assignment operator (deleted - non-copyable).
         CppOStream &operator=(const CppOStream &) = delete;
 
-        /// @brief Move constructor (deleted - non-moveable).
         CppOStream(CppOStream &&) = delete;
 
-        /// @brief Move assignment operator (deleted - non-moveable).
         CppOStream &operator=(CppOStream &&) = delete;
 
-        /// @brief Destructor - releases C stream resources.
         ~CppOStream();
 
     private:
@@ -553,8 +537,6 @@ namespace c2pa
     };
 
     /// @brief Input/output stream wrapper for C2paStream.
-    /// @details This class wraps a C++ std::iostream-derived object for use with the C2PA C API.
-    ///          Implements the C2paStream interface with read, write, seek, and flush operations.
     class C2PA_CPP_API CppIOStream : public C2paStream
     {
     public:
@@ -574,19 +556,14 @@ namespace c2pa
             }
         }
 
-        /// @brief Copy constructor (deleted - non-copyable).
         CppIOStream(const CppIOStream &) = delete;
 
-        /// @brief Copy assignment operator (deleted - non-copyable).
         CppIOStream &operator=(const CppIOStream &) = delete;
 
-        /// @brief Move constructor (deleted - non-moveable).
         CppIOStream(CppIOStream &&) = delete;
 
-        /// @brief Move assignment operator (deleted - non-moveable).
         CppIOStream &operator=(CppIOStream &&) = delete;
 
-        /// @brief Destructor - releases C stream resources.
         ~CppIOStream();
 
     private:
@@ -662,10 +639,8 @@ namespace c2pa
         [[deprecated("Use Reader(IContextProvider& context, source_path) instead")]]
         Reader(const std::filesystem::path &source_path);
 
-        /// @brief Copy constructor (deleted - non-copyable).
         Reader(const Reader&) = delete;
 
-        /// @brief Copy assignment operator (deleted - non-copyable).
         Reader& operator=(const Reader&) = delete;
 
         /// @brief Move constructor.
@@ -693,7 +668,6 @@ namespace c2pa
             return *this;
         }
 
-        /// @brief Destructor - releases reader resources.
         ~Reader();
 
         /// @brief Check if the reader was created from an embedded manifest.
@@ -784,10 +758,8 @@ namespace c2pa
         /// @throws C2paException if signer creation fails.
         Signer(const std::string &alg, const std::string &sign_cert, const std::string &private_key, const std::optional<std::string> &tsa_uri = std::nullopt);
 
-        /// @brief Copy constructor (deleted - non-copyable).
         Signer(const Signer&) = delete;
 
-        /// @brief Copy assignment operator (deleted - non-copyable).
         Signer& operator=(const Signer&) = delete;
 
         /// @brief Move constructor.
@@ -808,7 +780,6 @@ namespace c2pa
             return *this;
         }
 
-        /// @brief Destructor - releases signer resources.
         ~Signer();
 
         /// @brief Get the size to reserve for a signature.
@@ -848,10 +819,8 @@ namespace c2pa
         [[deprecated("Use Builder(IContextProvider& context, manifest_json) instead")]]
         Builder(const std::string &manifest_json);
 
-        /// @brief Copy constructor (deleted - non-copyable).
         Builder(const Builder&) = delete;
 
-        /// @brief Copy assignment operator (deleted - non-copyable).
         Builder& operator=(const Builder&) = delete;
 
         /// @brief Move constructor.
@@ -873,7 +842,6 @@ namespace c2pa
             return *this;
         }
 
-        /// @brief Destructor - releases builder resources.
         ~Builder();
 
         /// @brief  Get the underlying C2paBuilder pointer.
@@ -1025,7 +993,7 @@ namespace c2pa
     private:
         /// @brief Private constructor for Builder from an archive.
         /// @param archive The input stream to read the archive from.
-        /// @note Internal use only - use from_archive() static method instead.
+        /// @note Internal use only, use from_archive() static method instead.
         explicit Builder(std::istream &archive);
     };
 }
