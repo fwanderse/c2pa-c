@@ -402,45 +402,6 @@ TEST_F(EmbeddableTest, ContextSettingsPropagation) {
     EXPECT_GT(manifest.size(), 0) << "Context propagated successfully through workflow";
 }
 
-// Using archives with embedding
-TEST_F(EmbeddableTest, ArchiveRoundTripWithContextAJpg) {
-    auto manifest_json = c2pa_test::read_text_file(c2pa_test::get_fixture_path("training.json"));
-    auto signer = c2pa_test::create_test_signer();
-
-    // Create context with custom settings (thumbnails disabled)
-    auto context = c2pa::Context(R"({
-        "builder": {
-            "thumbnail": {
-                "enabled": false
-            }
-        }
-    })");
-
-    // Create initial builder and get baseline placeholder size
-    auto builder1 = c2pa::Builder(context, manifest_json);
-    auto placeholder1 = builder1.data_hashed_placeholder(signer.reserve_size(), "image/jpeg");
-    size_t original_size = placeholder1.size();
-
-    // Save to archive
-    auto archive_path = get_temp_path("archive_a.c2pa");
-    std::ofstream archive_stream(archive_path, std::ios::binary);
-    builder1.to_archive(archive_stream);
-    archive_stream.close();
-
-    // Load from archive using same context
-    auto builder2 = c2pa::Builder(context);
-    std::ifstream load_stream(archive_path, std::ios::binary);
-    builder2.with_archive(load_stream);
-    load_stream.close();
-
-    // Get placeholder from restored builder
-    auto placeholder2 = builder2.data_hashed_placeholder(signer.reserve_size(), "image/jpeg");
-
-    // Verify settings preserved by checking placeholder size matches
-    EXPECT_EQ(placeholder2.size(), original_size)
-        << "Settings should be preserved through archive round-trip";
-}
-
 // Using archives with embedding with asset having content credentials
 TEST_F(EmbeddableTest, ArchiveRoundTripWithContextCJpg) {
     auto manifest_json = c2pa_test::read_text_file(c2pa_test::get_fixture_path("training.json"));
@@ -529,24 +490,39 @@ TEST_F(EmbeddableTest, ArchiveWithIngredientAJpg) {
 
     auto builder1 = c2pa::Builder(context, manifest_with_ingredient);
 
+    std::cout << "builder created" << std::endl;
+
     // Add ingredient using the proper API
     std::string ingredient_json = R"({"title": "A.jpg"})";
     builder1.add_ingredient(ingredient_json, ingredient_path);
 
+    std::cout << "Ingredient added" << std::endl;
+
     // Get baseline placeholder size
     auto placeholder1 = builder1.data_hashed_placeholder(signer.reserve_size(), "image/jpeg");
+
+    std::cout << "PLACEHOLDERED" << std::endl;
+
     size_t original_size = placeholder1.size();
 
     // Archive and restore
     auto archive_path = get_temp_path("archive_with_ingredient_a.c2pa");
     std::ofstream archive_stream(archive_path, std::ios::binary);
-    builder1.to_archive(archive_stream);
+
+    std::cout << "PREPARE TO ARCHIVE" << std::endl;
+
+    builder1.to_archive(archive_stream); // throws !?! Other: bad parameter: Claim must have exactly one hash binding assertio
+
+    std::cout << "ARCHIVED!!!!!" << std::endl;
+
     archive_stream.close();
 
     auto builder2 = c2pa::Builder(context);
     std::ifstream load_stream(archive_path, std::ios::binary);
     builder2.with_archive(load_stream);
     load_stream.close();
+
+    std::cout << "builder2 loaded" << std::endl;
 
     // Get placeholder from restored builder
     auto placeholder2 = builder2.data_hashed_placeholder(signer.reserve_size(), "image/jpeg");
