@@ -91,25 +91,14 @@ namespace c2pa
         /// @param message The error message.
         explicit C2paException(std::string message);
 
-        /// @brief Default destructor.
         ~C2paException() override = default;
 
-        /// @brief Copy constructor.
-        /// @param other The exception to copy from.
         C2paException(const C2paException&) = default;
 
-        /// @brief Copy assignment operator.
-        /// @param other The exception to copy from.
-        /// @return Reference to this object.
         C2paException& operator=(const C2paException&) = default;
 
-        /// @brief Move constructor.
-        /// @param other The exception to move from.
         C2paException(C2paException&&) = default;
 
-        /// @brief Move assignment operator.
-        /// @param other The exception to move from.
-        /// @return Reference to this object.
         C2paException& operator=(C2paException&&) = default;
 
         /// @brief Get the exception message.
@@ -655,9 +644,6 @@ namespace c2pa
             other.c2pa_reader = nullptr;
         }
 
-        /// @brief Move assignment operator.
-        /// @param other Reader to move from.
-        /// @return Reference to this object.
         Reader& operator=(Reader&& other) noexcept {
             if (this != &other) {
                 if (c2pa_reader != nullptr) {
