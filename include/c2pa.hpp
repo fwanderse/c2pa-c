@@ -94,20 +94,20 @@ namespace c2pa
         /// @brief Default destructor.
         ~C2paException() override = default;
 
-        /// @brief Copy constructor (defaulted).
+        /// @brief Copy constructor.
         /// @param other The exception to copy from.
         C2paException(const C2paException&) = default;
 
-        /// @brief Copy assignment operator (defaulted).
+        /// @brief Copy assignment operator.
         /// @param other The exception to copy from.
         /// @return Reference to this object.
         C2paException& operator=(const C2paException&) = default;
 
-        /// @brief Move constructor (defaulted).
+        /// @brief Move constructor.
         /// @param other The exception to move from.
         C2paException(C2paException&&) = default;
 
-        /// @brief Move assignment operator (defaulted).
+        /// @brief Move assignment operator.
         /// @param other The exception to move from.
         /// @return Reference to this object.
         C2paException& operator=(C2paException&&) = default;
@@ -451,7 +451,7 @@ namespace c2pa
         ~CppIStream();
 
     private:
-        /// @brief Reader callback implementation for C2PA C API.
+        /// @brief Reader callback implementation.
         /// @param context Stream context pointer.
         /// @param buffer Buffer to read into.
         /// @param size Number of bytes to read.
@@ -465,7 +465,7 @@ namespace c2pa
         /// @return -1 (always fails for input streams).
         static intptr_t writer(StreamContext *context, const uint8_t *buffer, intptr_t size);
 
-        /// @brief Seeker callback implementation for C2PA C API.
+        /// @brief Seeker callback implementation.
         /// @param context Stream context pointer.
         /// @param offset Offset to seek to.
         /// @param whence Seek mode (Start/Current/End).
@@ -519,21 +519,21 @@ namespace c2pa
         /// @return -1 (always fails for output streams).
         static intptr_t reader(StreamContext *context, uint8_t *buffer, intptr_t size);
 
-        /// @brief Writer callback implementation for C2PA C API.
+        /// @brief Writer callback implementation.
         /// @param context Stream context pointer.
         /// @param buffer Buffer to write from.
         /// @param size Number of bytes to write.
         /// @return Number of bytes written, or -1 on error (sets errno).
         static intptr_t writer(StreamContext *context, const uint8_t *buffer, intptr_t size);
 
-        /// @brief Seeker callback implementation for C2PA C API.
+        /// @brief Seeker callback implementation.
         /// @param context Stream context pointer.
         /// @param offset Offset to seek to.
         /// @param whence Seek mode (Start/Current/End).
         /// @return New stream position, or -1 on error (sets errno).
         static intptr_t seeker(StreamContext *context, intptr_t offset, C2paSeekMode whence);
 
-        /// @brief Flusher callback implementation for C2PA C API.
+        /// @brief Flusher callback implementation.
         /// @param context Stream context pointer.
         /// @return 0 on success, -1 on error (sets errno).
         static intptr_t flusher(StreamContext *context);
@@ -571,28 +571,28 @@ namespace c2pa
         ~CppIOStream();
 
     private:
-        /// @brief Reader callback implementation for C2PA C API.
+        /// @brief Reader callback implementation.
         /// @param context Stream context pointer.
         /// @param buffer Buffer to read into.
         /// @param size Number of bytes to read.
         /// @return Number of bytes read, or -1 on error (sets errno).
         static intptr_t reader(StreamContext *context, uint8_t *buffer, intptr_t size);
 
-        /// @brief Writer callback implementation for C2PA C API.
+        /// @brief Writer callback implementation.
         /// @param context Stream context pointer.
         /// @param buffer Buffer to write from.
         /// @param size Number of bytes to write.
         /// @return Number of bytes written, or -1 on error (sets errno).
         static intptr_t writer(StreamContext *context, const uint8_t *buffer, intptr_t size);
 
-        /// @brief Seeker callback implementation for C2PA C API.
+        /// @brief Seeker callback implementation.
         /// @param context Stream context pointer.
         /// @param offset Offset to seek to.
         /// @param whence Seek mode (Start/Current/End).
         /// @return New stream position, or -1 on error (sets errno).
         static intptr_t seeker(StreamContext *context, intptr_t offset, C2paSeekMode whence);
 
-        /// @brief Flusher callback implementation for C2PA C API.
+        /// @brief Flusher callback implementation.
         /// @param context Stream context pointer.
         /// @return 0 on success, -1 on error (sets errno).
         static intptr_t flusher(StreamContext *context);
@@ -648,8 +648,6 @@ namespace c2pa
 
         Reader& operator=(const Reader&) = delete;
 
-        /// @brief Move constructor.
-        /// @param other Reader to move from.
         Reader(Reader&& other) noexcept
             : c2pa_reader(other.c2pa_reader),
               owned_stream(std::move(other.owned_stream)),
@@ -682,7 +680,8 @@ namespace c2pa
             return c2pa_reader_is_embedded(c2pa_reader);
         }
 
-        /// @brief Get the remote URL of the manifest if obtained remotely.
+        /// @brief Returns the remote url of the manifest if this `Reader`
+        ///        obtained the manifest remotely
         /// @return Optional string containing the remote URL, or std::nullopt if manifest was embedded.
         /// @throws C2paException for errors encountered by the C2PA library.
         [[nodiscard]] std::optional<std::string> remote_url() const;
@@ -751,7 +750,7 @@ namespace c2pa
         /// @throws C2paException if signer creation fails.
         Signer(SignerFunc *callback, C2paSigningAlg alg, const std::string &sign_cert, const std::string &tsa_uri);
 
-        /// @brief Create a Signer from a raw C2paSigner pointer (takes ownership).
+        /// @brief Create a signer from a Signer pointer and take ownership of that pointer.
         /// @param c_signer The C2paSigner pointer (must be non-null).
         Signer(C2paSigner *c_signer) : signer(c_signer) {}
 
@@ -773,9 +772,6 @@ namespace c2pa
             other.signer = nullptr;
         }
 
-        /// @brief Move assignment operator.
-        /// @param other Signer to move from.
-        /// @return Reference to this object.
         Signer& operator=(Signer&& other) noexcept {
             if (this != &other) {
                 c2pa_free(signer);
@@ -828,15 +824,10 @@ namespace c2pa
 
         Builder& operator=(const Builder&) = delete;
 
-        /// @brief Move constructor.
-        /// @param other Builder to move from.
         Builder(Builder&& other) noexcept : builder(other.builder) {
             other.builder = nullptr;
         }
 
-        /// @brief Move assignment operator.
-        /// @param other Builder to move from.
-        /// @return Reference to this object.
         Builder& operator=(Builder&& other) noexcept {
             if (this != &other) {
                 if (builder != nullptr)
@@ -863,7 +854,7 @@ namespace c2pa
         /// @details When set, the manifest will be stored externally rather than embedded.
         void set_no_embed();
 
-        /// @brief Set the remote URL where the manifest will be hosted.
+        /// @brief Set the remote URL.
         /// @param remote_url The remote URL to set.
         /// @throws C2paException for errors encountered by the C2PA library.
         void set_remote_url(const std::string &remote_url);
@@ -910,10 +901,10 @@ namespace c2pa
         void add_action(const std::string &action_json);
 
         /// @brief Sign an input stream and write the signed data to an output stream.
-        /// @param format The mime format of the output.
+        /// @param format The mime format of the output stream.
         /// @param source The input stream to sign.
         /// @param dest The output stream to write the signed data to.
-        /// @param signer The signer object to use for signing.
+        /// @param signer The Signer object to use for signing.
         /// @return A vector containing the signed manifest bytes.
         /// @throws C2paException for errors encountered by the C2PA library.
         /// @deprecated Use sign(const string&, std::istream&, std::iostream&, Signer&) instead.
@@ -923,7 +914,7 @@ namespace c2pa
         /// @param format The mime format of the output.
         /// @param source The input stream to sign.
         /// @param dest The I/O stream to write the signed data to.
-        /// @param signer The signer object to use for signing.
+        /// @param signer The Signer object to use for signing.
         /// @return A vector containing the signed manifest bytes.
         /// @throws C2paException for errors encountered by the C2PA library.
         std::vector<unsigned char> sign(const std::string &format, std::istream &source, std::iostream &dest, Signer &signer);
@@ -943,7 +934,7 @@ namespace c2pa
         /// @throws C2paException for errors encountered by the C2PA library.
         static Builder from_archive(std::istream &archive);
 
-        /// @brief Create a Builder from an archive file.
+        /// @brief Create a Builder from an archive.
         /// @param archive_path The path to the archive file.
         /// @return A new Builder instance loaded from the archive.
         /// @throws C2paException for errors encountered by the C2PA library.
@@ -976,7 +967,7 @@ namespace c2pa
         /// @throws C2paException for errors encountered by the C2PA library.
         std::vector<unsigned char> data_hashed_placeholder(uintptr_t reserved_size, const std::string &format);
 
-        /// @brief Sign a Builder using data hashing.
+        /// @brief Sign a Builder using the specified signer and data hash.
         /// @param signer The signer to use for signing.
         /// @param data_hash The data hash ranges to sign (must contain hashes unless an asset is provided).
         /// @param format The mime format for embedding. Use "c2pa" for an unformatted result.
@@ -988,7 +979,7 @@ namespace c2pa
         /// @brief Convert unformatted manifest data to an embeddable format.
         /// @param format The format for embedding.
         /// @param data Unformatted manifest data from sign_data_hashed_embeddable using "c2pa" format.
-        /// @return A formatted copy of the data ready for embedding.
+        /// @return A formatted copy of the data.
         static std::vector<unsigned char> format_embeddable(const std::string &format, std::vector<unsigned char> &data);
 
         /// @brief Get a list of mime types that the Builder supports.
@@ -996,9 +987,6 @@ namespace c2pa
         static std::vector<std::string> supported_mime_types();
 
     private:
-        /// @brief Private constructor for Builder from an archive.
-        /// @param archive The input stream to read the archive from.
-        /// @note Internal use only, use from_archive() static method instead.
         explicit Builder(std::istream &archive);
     };
 }
