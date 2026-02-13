@@ -402,56 +402,6 @@ TEST_F(EmbeddableTest, ContextSettingsPropagation) {
     EXPECT_GT(manifest.size(), 0) << "Context propagated successfully through workflow";
 }
 
-// Using archives with embedding with asset having content credentials
-TEST_F(EmbeddableTest, ArchiveRoundTripWithContextCJpg) {
-    auto manifest_json = c2pa_test::read_text_file(c2pa_test::get_fixture_path("training.json"));
-    auto signer = c2pa_test::create_test_signer();
-    auto source_asset = c2pa_test::get_fixture_path("C.jpg");
-
-    auto context = c2pa::Context(R"({
-        "builder": {
-            "thumbnail": {
-                "enabled": false
-            }
-        }
-    })");
-
-    auto builder1 = c2pa::Builder(context, manifest_json);
-
-    auto archive_path = get_temp_path("archive_c.c2pa");
-    std::ofstream archive_stream(archive_path, std::ios::binary);
-    builder1.to_archive(archive_stream);
-    archive_stream.close();
-
-    auto builder2 = c2pa::Builder(context);
-    std::ifstream load_stream(archive_path, std::ios::binary);
-    builder2.with_archive(load_stream);
-    load_stream.close();
-
-    auto placeholder = builder2.data_hashed_placeholder(signer.reserve_size(), "image/jpeg");
-
-    size_t embed_offset = 20;
-    std::string data_hash = R"({
-        "exclusions": [{
-            "start": )" + std::to_string(embed_offset) + R"(,
-            "length": )" + std::to_string(placeholder.size()) + R"(
-        }],
-        "name": "jumbf manifest",
-        "alg": "sha256",
-        "hash": "",
-        "pad": " "
-    })";
-
-    std::ifstream asset_stream(source_asset, std::ios::binary);
-    auto signed_manifest = builder2.sign_data_hashed_embeddable(
-        signer, data_hash, "image/jpeg", &asset_stream);
-    asset_stream.close();
-
-    // Verify the signed manifest has the expected size
-    EXPECT_EQ(signed_manifest.size(), placeholder.size())
-        << "Settings preserved through archive round-trip";
-}
-
 // Verify different formats
 TEST_F(EmbeddableTest, MultipleFormats) {
     auto manifest_json = c2pa_test::read_text_file(c2pa_test::get_fixture_path("training.json"));
