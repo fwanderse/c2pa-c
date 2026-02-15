@@ -1,103 +1,186 @@
 # Configuring the SDK using Context
 
-Use the `Context` class to configure the C2PA C++ library. Context holds the configuration and settings used by `Reader` and `Builder` for verification, signing, and manifest handling.
+The `Context` class is the recommended way to configure the C2PA C++ library. A Context holds the configuration and settings used by `Reader` and `Builder` for verification, signing, and manifest handling.
 
 ## What is Context?
 
-Context encapsulates the configuration needed for C2PA operations:
+Context encapsulates all the configuration needed for C2PA operations:
 
-- **Settings**: Verification options, builder behavior, trust anchors, signer configuration, and related options. Details on supported settings are found in [CAI settings schema reference](https://opensource.contentauthenticity.org/docs/manifest/json-ref/settings-schema/).
-- **Signers**: When signer configuration is present in settings, the SDK can create signers from the context when needed for signing.
+- **Settings**: Verification options, builder behavior, trust anchors, thumbnail configuration, and more. See [settings.md](settings.md) for complete details.
+- **Signer configuration**: Optional signer credentials and settings that can be stored in the context for reuse.
+- **State isolation**: Each context is independent, allowing different configurations to coexist in the same application.
 
-Context is preferred over the older global/thread-local settings because it:
+### Why use Context?
 
-- Makes dependencies explicit (configuration is passed in, not hidden).
-- Allows multiple configurations in the same application (e.g. one context for dev, one for prod).
-- No thread-local state: each Reader/Builder gets its configuration from the context you pass.
-- Simplifies testing (different contexts per test).
+Context is preferred over the older global/thread-local settings approach because it:
 
-The deprecated `c2pa::load_settings(data, format)` still works for backward compatibility but is not recommended. Prefer creating a `Context` with settings and passing it to `Reader` and `Builder`. See [Migration from load_settings](#migration-from-load_settings).
+- **Makes dependencies explicit**: Configuration is passed directly to `Reader` and `Builder`, not hidden in global state.
+- **Enables multiple configurations**: Run different configurations simultaneously (e.g., one context for development with test certificates, another for production with strict validation).
+- **Eliminates thread-local state**: Each `Reader` and `Builder` gets its configuration from the context you pass, avoiding subtle bugs from shared state.
+- **Simplifies testing**: Create isolated contexts per test without worrying about cleanup or interference between tests.
+- **Improves code clarity**: Reading `Builder(context, manifest)` immediately shows that configuration is being used.
+
+**Note:** The deprecated `c2pa::load_settings(data, format)` still works for backward compatibility but is not recommended for new code. See [Migration from load_settings](#migration-from-load_settings).
 
 ## Creating a Context
 
-### Default context
+There are several ways to create a Context, depending on your needs:
+
+### Default context (SDK defaults)
+
+The simplest approach uses all SDK default settings:
 
 ```cpp
 #include "c2pa.hpp"
 
-c2pa::Context context;
+c2pa::Context context;  // Uses SDK defaults
 ```
 
-### From a JSON string
+**When to use:** Quick prototyping, or when you're happy with default behavior (verification enabled, thumbnails enabled at 1024px, etc.).
+
+### From a JSON string (inline configuration)
+
+Pass configuration directly as a JSON string:
 
 ```cpp
 c2pa::Context context(R"({
+  "version": 1,
   "verify": {"verify_after_sign": true},
-  "builder": {"thumbnail": {"enabled": false}}
+  "builder": {
+    "thumbnail": {"enabled": false},
+    "claim_generator_info": {"name": "My App", "version": "1.0"}
+  }
 })");
 ```
 
-### From a Settings object
+**When to use:** Configuration is simple and doesn't need to be shared across the codebase, or when hardcoding settings for a specific purpose (e.g., a utility script).
 
-```cpp
-c2pa::Settings settings;
-settings.update(R"({"verify": {"verify_after_sign": true}}");
+### From a Settings object (programmatic configuration)
 
-c2pa::Context context(settings);
-```
-
-### Using ContextBuilder (multiple sources)
-
-When you need to layer several configuration sources (e.g. base settings plus overrides), use `Context::ContextBuilder`:
-
-```cpp
-c2pa::Settings base_settings;
-base_settings.set("builder.thumbnail.enabled", "true");
-
-auto context = c2pa::Context::ContextBuilder()
-    .with_settings(base_settings)
-    .with_json(R"({"verify": {"verify_after_sign": true}})")
-    .create_context();
-```
-
-Options:
-
-- **`with_settings(settings)`** — Apply a `Settings` object (must be valid).
-- **`with_json(json)`** — Apply settings from a JSON string. Later calls override earlier ones.
-- **`with_json_settings_file(path)`** — Load JSON from a file and apply it.
-
-Call **`create_context()`** to build the `Context`. The builder is consumed and must not be used afterward (`is_valid()` will be false).
-
-For a single configuration source, direct construction (`Context()`, `Context(settings)`, `Context(json)`) is simpler.
-
-## Configuring settings
-
-You can configure settings in several ways:
-
-### From a JSON string
-
-```cpp
-c2pa::Context context(R"({
-  "verify": {"verify_after_sign": true},
-  "builder": {"claim_generator_info": {"name": "My App"}}
-})");
-`````
-
-### From a Settings object
+Build settings programmatically, then create a context:
 
 ```cpp
 c2pa::Settings settings;
 settings.set("builder.thumbnail.enabled", "false");
-settings.update(R"({"verify": {"remote_manifest_fetch": false}})");
+settings.set("verify.verify_after_sign", "true");
+settings.update(R"({
+  "builder": {
+    "claim_generator_info": {"name": "My App", "version": "1.0"}
+  }
+})");
 
 c2pa::Context context(settings);
 ```
 
-### From a settings file
+**When to use:** Configuration needs runtime logic (e.g., conditional settings based on environment), or you want to build settings incrementally.
+
+### Using ContextBuilder (layered configuration)
+
+When you need to combine multiple configuration sources, use `Context::ContextBuilder`:
+
+```cpp
+c2pa::Settings base_settings;
+base_settings.set("builder.thumbnail.enabled", "true");
+base_settings.set("builder.thumbnail.long_edge", "1024");
+
+auto context = c2pa::Context::ContextBuilder()
+    .with_settings(base_settings)
+    .with_json(R"({"verify": {"verify_after_sign": true}})")
+    .with_json_settings_file("config/overrides.json")
+    .create_context();
+```
+
+**ContextBuilder methods:**
+
+| Method | Description |
+|--------|-------------|
+| `with_settings(settings)` | Apply a `Settings` object. Must be valid (not moved-from). |
+| `with_json(json_string)` | Apply settings from a JSON string. Later calls override earlier ones. |
+| `with_json_settings_file(path)` | Load and apply settings from a JSON file. Throws `C2paException` if file doesn't exist or is invalid. |
+| `create_context()` | Build and return the `Context`. Consumes the builder (it becomes invalid and cannot be reused). |
+
+**Important:** Later configuration overrides earlier configuration. In the example above, if `overrides.json` sets `builder.thumbnail.enabled` to `false`, it will override the `true` value from `base_settings`.
+
+**When to use ContextBuilder:**
+
+- Loading base configuration from a file with environment-specific overrides
+- Applying multiple JSON snippets in a specific order
+- Combining programmatic settings with file-based configuration
+
+**When NOT to use ContextBuilder:** If you have a single configuration source, direct construction is simpler and more readable:
+
+```cpp
+// Prefer this for single source:
+c2pa::Context context(settings);
+
+// Over this:
+auto context = c2pa::Context::ContextBuilder()
+    .with_settings(settings)
+    .create_context();
+```
+
+## Common configuration patterns
+
+### Development environment with test certificates
+
+During development, you often need to trust self-signed or custom CA certificates:
+
+```cpp
+// Load your test root CA
+std::string test_ca = read_file("test-ca.pem");
+
+c2pa::Context dev_context(R"({
+  "version": 1,
+  "trust": {
+    "user_anchors": ")" + test_ca + R"("
+  },
+  "verify": {
+    "verify_after_reading": true,
+    "verify_after_sign": true,
+    "remote_manifest_fetch": false,
+    "ocsp_fetch": false
+  },
+  "builder": {
+    "claim_generator_info": {"name": "Dev Build", "version": "dev"},
+    "thumbnail": {"enabled": false}
+  }
+})");
+```
+
+### Configuration from environment variables
+
+Adapt configuration based on runtime environment:
+
+```cpp
+std::string env = std::getenv("ENVIRONMENT") ? std::getenv("ENVIRONMENT") : "dev";
+
+c2pa::Settings settings;
+if (env == "production") {
+    settings.update(read_file("config/production.json"), "json");
+    settings.set("verify.strict_v1_validation", "true");
+} else {
+    settings.update(read_file("config/development.json"), "json");
+    settings.set("verify.remote_manifest_fetch", "false");
+}
+
+c2pa::Context context(settings);
+```
+
+### Layered configuration (base + overrides)
+
+Load base configuration from a file and apply runtime overrides:
 
 ```cpp
 auto context = c2pa::Context::ContextBuilder()
-    .with_json_settings_file("/path/to/settings.json")
+    .with_json_settings_file("config/base.json")
+    .with_json_settings_file("config/" + environment + ".json")
+    .with_json(R"({
+      "builder": {
+        "claim_generator_info": {
+          "version": ")" + app_version + R"("
+        }
+      }
+    })")
     .create_context();
 ```
 
@@ -105,47 +188,131 @@ For the full list of settings and defaults, see [Configuring settings](settings.
 
 ## Using Context with Reader
 
-`Reader` uses the context to decide how to validate manifests and handle remote resources:
+`Reader` uses the context to control how manifests are validated and how remote resources are handled. The context affects:
+
+- **Verification behavior**: Whether to verify after reading, check trust, fetch remote manifests, etc.
+- **Trust configuration**: Which certificates to trust when validating signatures.
+- **Network access**: Whether to fetch remote manifests or OCSP responses.
+- **Performance**: Memory thresholds and other core settings.
+
+### Reading from a file
 
 ```cpp
-// Context that disables remote manifest fetch
-c2pa::Context context(R"({"verify": {"remote_manifest_fetch": false}})");
+// Context that disables remote manifest fetch (for offline environments)
+c2pa::Context context(R"({
+  "version": 1,
+  "verify": {
+    "remote_manifest_fetch": false,
+    "ocsp_fetch": false
+  }
+})");
 
+c2pa::Reader reader(context, "image.jpg");
+std::cout << reader.json() << std::endl;
+```
+
+### Reading from a stream
+
+```cpp
 std::ifstream stream("image.jpg", std::ios::binary);
 c2pa::Reader reader(context, "image/jpeg", stream);
 
 std::cout << reader.json() << std::endl;
 ```
 
-Or from a file path:
+### Different contexts for different validation needs
 
 ```cpp
-c2pa::Reader reader(context, "image.jpg");
+// Full validation context (all verification features enabled)
+c2pa::Context full_validation_context(R"({
+  "verify": {
+    "verify_after_reading": true,
+    "verify_trust": true,
+    "verify_timestamp_trust": true,
+    "remote_manifest_fetch": true
+  }
+})");
+
+// Offline context (no network access)
+c2pa::Context offline_context(R"({
+  "verify": {
+    "remote_manifest_fetch": false,
+    "ocsp_fetch": false
+  }
+})");
+
+// Use different contexts for different purposes
+c2pa::Reader online_reader(full_validation_context, "asset.jpg");
+c2pa::Reader offline_reader(offline_context, "local_asset.jpg");
 ```
 
-The context is used only at construction; the reader copies the configuration it needs. The context object does not need to outlive the reader.
+**Important:** The context is used only at construction. The reader copies the configuration it needs internally, so the context object does not need to outlive the reader. This means you can safely use temporary point-in-time contexts:
+
+```cpp
+c2pa::Reader reader(
+    c2pa::Context(R"({"verify": {"remote_manifest_fetch": false}})"),
+    "image.jpg"
+);
+```
 
 ## Using Context with Builder
 
-`Builder` uses the context for signing and manifest creation. If settings include signer configuration, the signer is created from the context when you sign:
+`Builder` uses the context to control how C2PA manifests are created and signed. The context affects:
+
+- **Claim generator information**: Application name, version, and metadata embedded in the manifest
+- **Thumbnail generation**: Whether to create thumbnails, size, quality, format
+- **Action tracking**: Auto-generation of actions like `c2pa.created`, `c2pa.opened`, `c2pa.placed`
+- **Intent**: The purpose of the claim (Create, Edit, Update)
+- **Verification after signing**: Whether to validate the manifest immediately after signing
+- **Signer configuration** (optional): Credentials can be stored in settings for reuse
+
+### Basic builder usage with context
 
 ```cpp
 c2pa::Context context(R"({
+  "version": 1,
   "builder": {
-    "claim_generator_info": {"name": "My App"},
+    "claim_generator_info": {
+      "name": "My Photo App",
+      "version": "1.0.0"
+    },
     "intent": {"Create": "digitalCapture"}
   }
 })");
 
 c2pa::Builder builder(context, manifest_json);
 
-// If signer is configured in context/settings, signing uses it
+// Pass signer explicitly at signing time
+c2pa::Signer signer("es256", certs, private_key);
 builder.sign(source_path, output_path, signer);
 ```
 
-You can still pass an explicit `Signer` to `Builder::sign()`. The context mainly supplies verification and builder options (thumbnails, actions, etc.) and, when configured in settings, signer credentials.
+### Controlling thumbnail generation
 
-The context is used only when constructing the builder; it does not need to outlive the builder.
+```cpp
+// Disable thumbnails for faster processing
+c2pa::Context no_thumbnails(R"({
+  "builder": {
+    "claim_generator_info": {"name": "Batch Processor"},
+    "thumbnail": {"enabled": false}
+  }
+})");
+
+// Or customize thumbnail size and quality for mobile
+c2pa::Context mobile_thumbnails(R"({
+  "builder": {
+    "claim_generator_info": {"name": "Mobile App"},
+    "thumbnail": {
+      "enabled": true,
+      "long_edge": 512,
+      "quality": "low",
+      "prefer_smallest_format": true
+    }
+  }
+})");
+```
+
+**Important:** The context is used only when constructing the builder. The builder copies the configuration it needs internally, so the context object does not need to outlive the builder.
 
 ## Configuring a signer
 
@@ -174,11 +341,11 @@ c2pa::Builder builder(context, manifest_json);
 builder.sign(source_path, dest_path, signer);
 ```
 
-In the C++ API you typically create a `c2pa::Signer` explicitly and pass it to `Builder::sign()`. Settings in the context still control verification, thumbnails, and other builder behavior. Check the [C2PA C API](https://github.com/contentauth/c2pa-rs) and [usage](usage.md) for how signer settings in the context are used when no explicit signer is passed (if supported).
+In the C++ API you typically create a `c2pa::Signer` explicitly and pass it to `Builder::sign()`. Settings in the context still control verification, thumbnails, and other builder behavior.
 
 ### Explicit Signer
 
-For full control (e.g. HSM or custom signing), create a `Signer` and pass it to `Builder::sign()`:
+For full programmatic control, create a `Signer` and pass it to `Builder::sign()`:
 
 ```cpp
 c2pa::Signer signer("es256", certs_pem, private_key_pem, "http://timestamp.digicert.com");
@@ -186,7 +353,7 @@ c2pa::Builder builder(context, manifest_json);
 builder.sign(source_path, dest_path, signer);
 ```
 
-The context continues to control verification and builder options; the signer is used only for the cryptographic signature.
+The context continues to control verification and builder options. The signer is used only for the cryptographic signature.
 
 ### Signer configuration in settings
 
@@ -208,26 +375,61 @@ See [settings.md](settings.md) for the full property reference.
 
 ## Context lifetime and usage
 
-- **Non-copyable, moveable:** Context can be moved; it is not copyable.
-- **Reader/Builder only use it at construction:** After you create a `Reader` or `Builder` with a context, the implementation copies what it needs. The context object does not need to outlive the reader or builder.
-- **Reuse:** You can reuse the same context to create multiple readers and builders.
+Understanding how Context works is important for correct usage.
+
+### Context ownership and lifecycle
+
+- **Non-copyable, moveable**: Context can be moved but not copied. After moving, the source context becomes invalid (`is_valid()` returns `false`).
+- **Used at construction only**: When you create a `Reader` or `Builder` with a context, the implementation copies the configuration it needs. The context object does not need to outlive the Reader or Builder.
+- **Reusable**: You can reuse the same context to create multiple readers and builders.
 
 ```cpp
 c2pa::Context context(settings);
 
+// All three use the same configuration
 c2pa::Builder builder1(context, manifest1);
 c2pa::Builder builder2(context, manifest2);
 c2pa::Reader reader(context, "image.jpg");
+
+// Context can go out of scope, readers/builders still work
 ```
 
-- **Different configs:** Use different contexts when you need different settings (e.g. one with trust for production, one without for tests).
+### Multiple contexts for different purposes
+
+Use different contexts when you need different settings (e.g., development vs. production, different trust configurations):
 
 ```cpp
 c2pa::Context dev_context(dev_settings);
 c2pa::Context prod_context(prod_settings);
 
+// Different builders with different configurations
 c2pa::Builder dev_builder(dev_context, manifest);
 c2pa::Builder prod_builder(prod_context, manifest);
+```
+
+### Move semantics
+
+```cpp
+c2pa::Context context1(settings);
+c2pa::Context context2 = std::move(context1);
+
+// context1 is now invalid
+assert(!context1.is_valid());
+
+// context2 is valid and can be used
+c2pa::Builder builder(context2, manifest);
+```
+
+### Temporary contexts
+
+Since the context is copied at construction, you can use temporary contexts:
+
+```cpp
+c2pa::Builder builder(
+    c2pa::Context(R"({"builder": {"thumbnail": {"enabled": false}}})"),
+    manifest_json
+);
+// Temporary context destroyed, but builder still has the configuration
 ```
 
 ## When to use ContextBuilder
@@ -277,3 +479,4 @@ If you still use `load_settings`, construct `Reader` or `Builder` **without** a 
 
 - [Configuring settings](settings.md) — schema, property reference, and examples.
 - [Usage](usage.md) — reading and signing with Reader and Builder.
+- [CAI settings schema](https://opensource.contentauthenticity.org/docs/manifest/json-ref/settings-schema/): full schema reference.
