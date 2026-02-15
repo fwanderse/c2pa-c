@@ -1,4 +1,4 @@
-# Configuring settings
+# Configuring SDK settings
 
 You can configure SDK settings using a JSON configuration that controls many aspects of the library's behavior. This JSON definition works the same across C2PA SDK implementations (Rust, C/C++, and other language bindings like Python).
 
