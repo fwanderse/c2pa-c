@@ -48,7 +48,7 @@ c2pa::Context context(R"({
   "verify": {"verify_after_sign": true},
   "builder": {
     "thumbnail": {"enabled": false},
-    "claim_generator_info": {"name": "My App", "version": "1.0"}
+    "claim_generator_info": {"name": "An app", "version": "0.1.0"}
   }
 })");
 ```
@@ -65,7 +65,7 @@ settings.set("builder.thumbnail.enabled", "false");
 settings.set("verify.verify_after_sign", "true");
 settings.update(R"({
   "builder": {
-    "claim_generator_info": {"name": "My App", "version": "1.0"}
+    "claim_generator_info": {"name": "An app", "version": "0.1.0"}
   }
 })");
 
@@ -273,8 +273,8 @@ c2pa::Context context(R"({
   "version": 1,
   "builder": {
     "claim_generator_info": {
-      "name": "My Photo App",
-      "version": "1.0.0"
+      "name": "An app",
+      "version": "0.1.0"
     },
     "intent": {"Create": "digitalCapture"}
   }
