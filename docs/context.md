@@ -1,6 +1,6 @@
 # Giving context to the SDK for Readers and Builder
 
-The `Context` class is the recommended way to configure the C2PA C++ library. A Context holds the configuration and settings used by `Reader` and `Builder` for verification, signing, and manifest handling.
+The `Context` class is the recommended way to configure the C2PA C++ library. A Context holds the SDK configuration and settings used by `Reader` and `Builder`.
 
 ## What is Context?
 
