@@ -37,11 +37,11 @@ A **C2PA archive** is the serialized bytes of a working store saved to a file or
 - Should be saved via `Builder::to_archive()` and restored via `Builder::from_archive()` to restore the full working store and continue working on it
 - Useful for separating manifest preparation ("work in progress") from final signing
 
-### The relationship
+### Overview diagram
 
 ```mermaid
 graph TD
-    A[Working Store<br/>Builder object] -->|sign with asset| B[Manifest Store<br/>embedded in asset]
+    A[Working Store<br/>Builder object] -->|sign| B[Manifest Store]
     A -->|to_archive| C[C2PA Archive<br/>.c2pa file]
     C -->|from_archive| A
 ```
