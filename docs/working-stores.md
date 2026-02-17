@@ -6,7 +6,7 @@
 
 A **manifest store** is the final C2PA data structure that gets embedded in (or attached to) a signed asset. It contains one or more manifests with each their provenance data and cryptographic signatures.
 
-**Key characteristics:**
+**Characteristics:**
 
 - Final, immutable signed data embedded in or attached to an asset
 - Contains one or more manifests (identified by URIs)
@@ -19,7 +19,7 @@ A **manifest store** is the final C2PA data structure that gets embedded in (or 
 
 A **working store** is a `Builder` object, an editable, in-progress manifest that has not yet been signed and bound to an asset. Think of it as a manifest in progress, or a manifest being built.
 
-**Key characteristics:**
+**Characteristics:**
 
 - Editable, mutable state in memory (a Builder object)
 - Contains claims, ingredients, and assertions that can be modified
