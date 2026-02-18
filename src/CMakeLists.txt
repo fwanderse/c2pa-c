@@ -224,6 +224,14 @@ add_custom_command(
 # Define the C++ library using the generated unity source (one TU).
 add_library(c2pa_cpp SHARED "${C2PA_AMALGAM_OUTPUT}")
 
+# On Windows, export all symbols so MSVC generates the c2pa_cpp.lib
+# import library that test/example targets need to link against.
+# Without this, MSVC silently skips .lib generation when no __declspec(dllexport)
+# annotations are present, causing LNK1104 at link time.
+if(WIN32)
+    set_target_properties(c2pa_cpp PROPERTIES WINDOWS_EXPORT_ALL_SYMBOLS ON)
+endif()
+
 # Set compiler-specific flags for the C++ library
 if(MSVC)
     target_compile_options(c2pa_cpp PRIVATE
@@ -253,7 +261,8 @@ else()
         target_link_options(c2pa_cpp PRIVATE
             -Wl,-bind_at_load
         )
-    else()
+    elseif(UNIX)
+        # Linux-only hardening flags
         target_link_options(c2pa_cpp PRIVATE
             -Wl,-z,relro
             -Wl,-z,now
