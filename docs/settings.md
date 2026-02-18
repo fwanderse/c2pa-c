@@ -1,8 +1,8 @@
 # Configuring SDK settings
 
-You can configure SDK settings using a JSON configuration that controls many aspects of the library's behavior. This JSON definition works the same across C2PA SDK implementations (Rust, C/C++, and other language bindings like Python).
+You can configure SDK settings using a JSON configuration that controls many aspects of the library's behavior. This JSON definition works the same across languages (Rust, C/C++, and other language bindings like Python).
 
-This document describes how to use settings in the C++ API and the available options. The schema is shared with the [C2PA Rust SDK](https://github.com/contentauth/c2pa-rs); for the complete JSON schema, see the [CAI settings schema reference](https://opensource.contentauthenticity.org/docs/manifest/json-ref/settings-schema/).
+This document describes how to use settings in the C++ API and the available options. The schema is shared with the [C2PA Rust library](https://github.com/contentauth/c2pa-rs); for the complete JSON schema, see the [CAI settings schema reference](https://opensource.contentauthenticity.org/docs/manifest/json-ref/settings-schema/).
 
 **IMPORTANT:** If you don't specify a value for a property, the SDK uses the default value. If you specify a value of `null`, the property is explicitly set to `null`, not the default. This distinction is important when you want to override a default behavior.
 
@@ -215,7 +215,7 @@ The top-level **`version`** must be `1`. All other properties are optional.
 - **Set to `null`**: property is `null`, not the default.
 - Use JSON booleans (`true` / `false`), not the strings `"true"` / `"false"`.
 
-### trust
+### Trust configuration
 
 Certificate trust configuration for C2PA validation. These settings control which certificates are trusted when validating C2PA manifests.
 
@@ -515,12 +515,12 @@ The primary C2PA signer configuration. This can be `null` (if you provide the si
 
 Use a local signer when you have direct access to the private key and certificate.
 
-| Property                   | Type   | Description                                                                                                                       |
-|----------------------------|--------|-----------------------------------------------------------------------------------------------------------------------------------|
-| `signer.local.alg`         | string | Signing algorithm: `"ps256"`, `"ps384"`, `"ps512"` (RSA-PSS), `"es256"`, `"es384"`, `"es512"` (ECDSA), or `"ed25519"` (EdDSA)    |
-| `signer.local.sign_cert`   | string | Certificate chain in PEM format. Include intermediate certificates if needed.                                                    |
-| `signer.local.private_key` | string | Private key in PEM format. **Keep this secure!**                                                                                 |
-| `signer.local.tsa_url`     | string | (Optional) Timestamp Authority URL for trusted timestamps (e.g., `"http://timestamp.digicert.com"`).                             |
+| Property  | Type  | Description  |
+|-----------|-------|--------------|
+| `signer.local.alg` | string | Signing algorithm: `"ps256"`, `"ps384"`, `"ps512"` (RSA-PSS), `"es256"`, `"es384"`, `"es512"` (ECDSA), or `"ed25519"` (EdDSA) |
+| `signer.local.sign_cert`   | string | Certificate chain in PEM format. Include intermediate certificates if needed.  |
+| `signer.local.private_key` | string | Private key in PEM format. **Keep this secure!**   |
+| `signer.local.tsa_url`  | string | (Optional) Timestamp Authority URL for trusted timestamps (e.g., `"http://timestamp.digicert.com"`).  |
 
 ##### Example: Local signer with ES256**
 
@@ -547,12 +547,12 @@ builder.sign(source_path, dest_path);
 
 Use a remote signer when the private key is stored on a secure signing service (HSM, cloud KMS, etc.).
 
-| Property                   | Type   | Description                                                              |
-|----------------------------|--------|--------------------------------------------------------------------------|
-| `signer.remote.url`        | string | URL of the remote signing service. The SDK will POST signing requests.  |
-| `signer.remote.alg`        | string | Signing algorithm (same values as local signer).                        |
-| `signer.remote.sign_cert`  | string | Certificate chain in PEM format.                                         |
-| `signer.remote.tsa_url`    | string | (Optional) Timestamp Authority URL.                                      |
+| Property | Type   | Description  |
+|----------|--------|--------------|
+| `signer.remote.url` | string | URL of the remote signing service. The SDK will POST signing requests.  |
+| `signer.remote.alg` | string | Signing algorithm (same values as local signer). |
+| `signer.remote.sign_cert` | string | Certificate chain in PEM format.  |
+| `signer.remote.tsa_url`  | string | (Optional) Timestamp Authority URL. |
 
 The remote signing service receives a POST request with the data to sign and must return the signature in the expected format.
 
