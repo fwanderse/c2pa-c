@@ -224,7 +224,7 @@ add_custom_command(
 # Define the C++ library using the generated unity source (one TU).
 add_library(c2pa_cpp SHARED "${C2PA_AMALGAM_OUTPUT}")
 
-# FIX 1: On Windows, export all symbols so MSVC generates the c2pa_cpp.lib
+# On Windows, export all symbols so MSVC generates the c2pa_cpp.lib
 # import library that test/example targets need to link against.
 # Without this, MSVC silently skips .lib generation when no __declspec(dllexport)
 # annotations are present, causing LNK1104 at link time.
@@ -262,9 +262,7 @@ else()
             -Wl,-bind_at_load
         )
     elseif(UNIX)
-        # FIX 2: These are Linux ELF-only hardening flags. Guard them so they
-        # are not passed to MinGW's ld.exe on Windows, which targets PE/COFF
-        # and does not recognise the -z option, causing a link failure.
+        # Linux-only hardening flags
         target_link_options(c2pa_cpp PRIVATE
             -Wl,-z,relro
             -Wl,-z,now
