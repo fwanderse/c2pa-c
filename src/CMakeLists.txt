@@ -52,6 +52,10 @@ else()
     set(C2PA_LIB_NAME "libc2pa_c.so")
 endif()
 set(C2PA_C_LIB "${C2PA_LIB_NAME}" PARENT_SCOPE)
+if(WIN32)
+    # Export path to C library import library so tests/examples can link (MSVC needs .lib, not .dll)
+    set(C2PA_C_IMPLIB "" PARENT_SCOPE)
+endif()
 
 if(C2PA_BUILD_FROM_SOURCE)
     # Build from source path
@@ -101,6 +105,10 @@ if(C2PA_BUILD_FROM_SOURCE)
 
     set(C2PA_C_LIB "${C2PA_RUST_BUILD_DIR}/${C2PA_LIB_NAME}")
     set(C2PA_C_LIB "${C2PA_C_LIB}" PARENT_SCOPE)
+    if(WIN32)
+        set(C2PA_C_IMPLIB "${C2PA_RUST_BUILD_DIR}/${C2PA_IMPLIB_NAME}")
+        set(C2PA_C_IMPLIB "${C2PA_C_IMPLIB}" PARENT_SCOPE)
+    endif()
     set(C2PA_INCLUDE_DIR "${C2PA_RUST_BUILD_DIR}")
     set(C2PA_PREBUILT_INCLUDE_DIR "${C2PA_RUST_BUILD_DIR}" PARENT_SCOPE)
 
@@ -122,6 +130,10 @@ else()
 
     set(C2PA_C_LIB "${c2pa_prebuilt_SOURCE_DIR}/lib/${C2PA_LIB_NAME}")
     set(C2PA_C_LIB "${C2PA_C_LIB}" PARENT_SCOPE)
+    if(WIN32)
+        set(C2PA_C_IMPLIB "${c2pa_prebuilt_SOURCE_DIR}/lib/${C2PA_IMPLIB_NAME}")
+        set(C2PA_C_IMPLIB "${C2PA_C_IMPLIB}" PARENT_SCOPE)
+    endif()
     set(C2PA_INCLUDE_DIR "${c2pa_prebuilt_SOURCE_DIR}/include")
     set(C2PA_PREBUILT_INCLUDE_DIR "${c2pa_prebuilt_SOURCE_DIR}/include" PARENT_SCOPE)
 

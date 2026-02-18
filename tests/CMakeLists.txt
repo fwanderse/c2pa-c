@@ -109,7 +109,12 @@ endfunction()
 # C++ tests (link to shared c2pa_cpp + C lib so we test the same deployment as consumers)
 file(GLOB CPP_TESTS "*.test.cpp")
 add_executable(c2pa_c_tests ${CPP_TESTS})
-target_link_libraries(c2pa_c_tests PRIVATE c2pa_cpp gtest_main "${C2PA_C_LIB}")
+# On Windows link to the C library import library (.lib); on Unix link to the shared lib
+if(WIN32)
+    target_link_libraries(c2pa_c_tests PRIVATE c2pa_cpp gtest_main "${C2PA_C_IMPLIB}")
+else()
+    target_link_libraries(c2pa_c_tests PRIVATE c2pa_cpp gtest_main "${C2PA_C_LIB}")
+endif()
 target_include_directories(c2pa_c_tests PRIVATE
     ${nlohmann_json_SOURCE_DIR}/include
     ${CMAKE_CURRENT_SOURCE_DIR}
