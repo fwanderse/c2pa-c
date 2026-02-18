@@ -209,11 +209,8 @@ add_custom_command(
     VERBATIM
 )
 
-# Define the C++ library using the generated unity source (one TU)
-add_library(c2pa_cpp STATIC "${C2PA_AMALGAM_OUTPUT}")
-
-# Static libs that may be linked into shared libs (e.g. libadobe_c2pa_cpp.so) must use -fPIC on Linux/ELF.
-set_target_properties(c2pa_cpp PROPERTIES POSITION_INDEPENDENT_CODE ON)
+# Define the C++ library using the generated unity source (one TU).
+add_library(c2pa_cpp SHARED "${C2PA_AMALGAM_OUTPUT}")
 
 # Set compiler-specific flags for the C++ library
 if(MSVC)
@@ -236,12 +233,8 @@ else()
         -Wnull-dereference
         -Wstack-protector
         -fstack-protector-strong
-        -fPIE
+        -fPIC
         -D_FORTIFY_SOURCE=2
-    )
-
-    target_link_options(c2pa_cpp PRIVATE
-        -pie
     )
 
     if(APPLE)
