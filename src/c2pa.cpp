@@ -50,35 +50,35 @@ std::vector<std::string> c_mime_types_to_vector(const char* const* mime_types, u
 
 intptr_t signer_passthrough(const void *context, const unsigned char *data, uintptr_t len, unsigned char *signature, uintptr_t sig_max_len)
 {
-  if (data == nullptr || signature == nullptr)
-  {
-    return c2pa::stream_error_return(c2pa::StreamError::InvalidArgument);
-  }
-  try
-  {
-    // the context is a pointer to the C++ callback function
-    auto* callback = reinterpret_cast<c2pa::SignerFunc*>(const_cast<void*>(context));
-    std::vector<uint8_t> data_vec(data, data + len);
-    std::vector<uint8_t> signature_vec = (callback)(data_vec);
-    if (signature_vec.size() > sig_max_len)
+    if (data == nullptr || signature == nullptr)
     {
-      return c2pa::stream_error_return(c2pa::StreamError::NoBufferSpace);
+        return c2pa::stream_error_return(c2pa::StreamError::InvalidArgument);
     }
-    std::copy(signature_vec.begin(), signature_vec.end(), signature);
-    return signature_vec.size();
-  }
+    try
+    {
+        const auto wrapper = static_cast<c2pa::SignerCallbackWrapper*>(const_cast<void*>(context));
+                
+        std::vector<uint8_t> data_vec(data, data + len);
+        std::vector<uint8_t> signature_vec = (*wrapper)(data_vec);
+        if (signature_vec.size() > sig_max_len)
+        {
+            return c2pa::stream_error_return(c2pa::StreamError::NoBufferSpace);
+        }
+        std::copy(signature_vec.begin(), signature_vec.end(), signature);
+        return signature_vec.size();
+    }
   catch (std::exception const &e)
-  {
-    // todo pass exceptions to Rust error handling
-    (void)e;
-    // printf("Error: signer_passthrough - %s\n", e.what());
-    return static_cast<intptr_t>(c2pa::OperationResult::Error);
-  }
-  catch (...)
-  {
-    // printf("Error: signer_passthrough - unknown C2paException\n");
-    return static_cast<intptr_t>(c2pa::OperationResult::Error);
-  }
+    {
+        // todo pass exceptions to Rust error handling
+        (void)e;
+        // printf("Error: signer_passthrough - %s\n", e.what());
+        return static_cast<intptr_t>(c2pa::OperationResult::Error);
+    }
+    catch (...)
+    {
+        // printf("Error: signer_passthrough - unknown C2paException\n");
+        return static_cast<intptr_t>(c2pa::OperationResult::Error);
+    }
 }
 
 }
@@ -280,6 +280,35 @@ inline std::vector<unsigned char> to_byte_vector(const unsigned char* data, int6
     c2pa_free(data);
     return result;
 }
+
+/// @brief Wrapper for signer callback with a simple function pointer (no caller context).
+struct SignerCallbackWrapperWithoutContext : SignerCallbackWrapper {
+    SignerFunc* caller_callback;
+
+    explicit SignerCallbackWrapperWithoutContext(SignerFunc* callback) :
+        caller_callback(callback)
+    {
+    }
+
+    std::vector<unsigned char> operator()(const std::vector<unsigned char>& data) const override {
+        return caller_callback(data);
+    }
+};
+
+/// @brief Wrapper for signer callback with a function pointer and caller context. 
+struct SignerCallbackWrapperWithContext : SignerCallbackWrapper {
+    SignerFuncWithContext* callback;
+    const void* caller_context;
+
+    explicit SignerCallbackWrapperWithContext(SignerFuncWithContext* callback, const void* caller_context) :
+        callback(callback), caller_context(caller_context)
+    {
+    }
+
+    std::vector<unsigned char> operator()(const std::vector<unsigned char>& data) const override {
+        return callback(caller_context, data);
+    }
+};
 
 } // namespace detail
 
@@ -833,8 +862,18 @@ inline std::vector<unsigned char> to_byte_vector(const unsigned char* data, int6
 
     Signer::Signer(SignerFunc *callback, C2paSigningAlg alg, const std::string &sign_cert, const std::string &tsa_uri)
     {
-        // Pass the C++ callback as a context to our static callback wrapper.
-        signer = c2pa_signer_create((const void *)callback, &signer_passthrough, alg, sign_cert.c_str(), validate_tsa_uri(tsa_uri));
+        // Wrap and pass the C++ callback and caller's context as a context to our callback wrapper.
+        callback_wrapper = new detail::SignerCallbackWrapperWithoutContext{ callback };
+
+        signer = c2pa_signer_create(callback_wrapper, &signer_passthrough, alg, sign_cert.c_str(), validate_tsa_uri(tsa_uri));
+    }
+
+    Signer::Signer(SignerFuncWithContext* callback, const void* caller_context, C2paSigningAlg alg, const std::string& sign_cert, const std::string& tsa_uri)
+    {
+        // Wrap and pass the C++ callback and caller's context as a context to our callback wrapper.
+        callback_wrapper = new detail::SignerCallbackWrapperWithContext{ callback, caller_context };
+
+        signer = c2pa_signer_create(callback_wrapper, &signer_passthrough, alg, sign_cert.c_str(), validate_tsa_uri(tsa_uri));
     }
 
     Signer::Signer(const std::string &alg, const std::string &sign_cert, const std::string &private_key, const std::optional<std::string> &tsa_uri)
@@ -846,6 +885,7 @@ inline std::vector<unsigned char> to_byte_vector(const unsigned char* data, int6
     Signer::~Signer()
     {
         c2pa_free(signer);
+        delete callback_wrapper;
     }
 
     /// @brief  Get the C2paSigner
