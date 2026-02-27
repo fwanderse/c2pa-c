@@ -790,13 +790,16 @@ namespace c2pa
 
         /// @brief Move constructor.
         /// @param other Signer to move from.
-        Signer(Signer&& other) noexcept : signer(std::exchange(other.signer, nullptr)) {
+        Signer(Signer&& other) noexcept 
+            : signer(std::exchange(other.signer, nullptr)),
+              callback_wrapper(std::exchange(other.callback_wrapper, nullptr)) {
         }
 
         Signer& operator=(Signer&& other) noexcept {
             if (this != &other) {
                 c2pa_free(signer);
                 signer = std::exchange(other.signer, nullptr);
+                callback_wrapper = std::exchange(other.callback_wrapper, nullptr);
             }
             return *this;
         }
