@@ -50,35 +50,35 @@ std::vector<std::string> c_mime_types_to_vector(const char* const* mime_types, u
 
 intptr_t signer_passthrough(const void *context, const unsigned char *data, uintptr_t len, unsigned char *signature, uintptr_t sig_max_len)
 {
-    if (data == nullptr || signature == nullptr)
-    {
-        return c2pa::stream_error_return(c2pa::StreamError::InvalidArgument);
-    }
-    try
-    {
-        const auto wrapper = static_cast<c2pa::SignerCallbackWrapper*>(const_cast<void*>(context));
+  if (data == nullptr || signature == nullptr)
+  {
+    return c2pa::stream_error_return(c2pa::StreamError::InvalidArgument);
+  }
+  try
+  {
+    const auto wrapper = static_cast<c2pa::SignerCallbackWrapper*>(const_cast<void*>(context));
                 
-        std::vector<uint8_t> data_vec(data, data + len);
-        std::vector<uint8_t> signature_vec = (*wrapper)(data_vec);
-        if (signature_vec.size() > sig_max_len)
-        {
-            return c2pa::stream_error_return(c2pa::StreamError::NoBufferSpace);
-        }
-        std::copy(signature_vec.begin(), signature_vec.end(), signature);
-        return signature_vec.size();
+    std::vector<uint8_t> data_vec(data, data + len);
+    std::vector<uint8_t> signature_vec = (*wrapper)(data_vec);
+    if (signature_vec.size() > sig_max_len)
+    {
+      return c2pa::stream_error_return(c2pa::StreamError::NoBufferSpace);
     }
+    std::copy(signature_vec.begin(), signature_vec.end(), signature);
+    return signature_vec.size();
+  }
   catch (std::exception const &e)
-    {
-        // todo pass exceptions to Rust error handling
-        (void)e;
-        // printf("Error: signer_passthrough - %s\n", e.what());
-        return static_cast<intptr_t>(c2pa::OperationResult::Error);
-    }
-    catch (...)
-    {
-        // printf("Error: signer_passthrough - unknown C2paException\n");
-        return static_cast<intptr_t>(c2pa::OperationResult::Error);
-    }
+  {
+    // todo pass exceptions to Rust error handling
+    (void)e;
+    // printf("Error: signer_passthrough - %s\n", e.what());
+    return static_cast<intptr_t>(c2pa::OperationResult::Error);
+  }
+  catch (...)
+  {
+    // printf("Error: signer_passthrough - unknown C2paException\n");
+    return static_cast<intptr_t>(c2pa::OperationResult::Error);
+  }
 }
 
 }
