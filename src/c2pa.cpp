@@ -47,7 +47,7 @@ std::vector<std::string> c_mime_types_to_vector(const char* const* mime_types, u
   c2pa_free_string_array(mime_types, count);
   return result;
 }
-    
+
 intptr_t signer_passthrough(const void* context, const unsigned char* data, uintptr_t len, unsigned char* signature, uintptr_t sig_max_len)
 {
   if (data == nullptr || signature == nullptr)
@@ -305,7 +305,6 @@ inline std::vector<unsigned char> to_byte_vector(const unsigned char* data, int6
     c2pa_free(data);
     return result;
 }
-
 
 } // namespace detail
 
