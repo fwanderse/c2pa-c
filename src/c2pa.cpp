@@ -47,26 +47,8 @@ std::vector<std::string> c_mime_types_to_vector(const char* const* mime_types, u
   c2pa_free_string_array(mime_types, count);
   return result;
 }
-
-/// @brief Callback handler that adapts a simple function pointer to the SignerCallbackHandler interface.
-///        Used internally.
-class FunctionSignerCallbackHandler : public c2pa::SignerCallbackHandler
-{
-public:
-    explicit FunctionSignerCallbackHandler(c2pa::SignerFunc* callback) :
-        caller_callback(callback)
-    {
-    }
-
-    std::vector<unsigned char> HandleCallback(const std::vector<unsigned char>& data) override {
-        return caller_callback(data);
-    }
-
-private:
-    c2pa::SignerFunc* caller_callback;
-};
     
-intptr_t signer_passthrough_with_handler(const void* context, const unsigned char* data, uintptr_t len, unsigned char* signature, uintptr_t sig_max_len)
+intptr_t signer_passthrough(const void* context, const unsigned char* data, uintptr_t len, unsigned char* signature, uintptr_t sig_max_len)
 {
     if (data == nullptr || signature == nullptr)
     {
@@ -99,12 +81,29 @@ intptr_t signer_passthrough_with_handler(const void* context, const unsigned cha
     }
 }
 
+/// @brief Internal callback handler that adapts a simple function pointer to the SignerCallbackHandler interface. 
+class FunctionSignerCallbackHandler : public c2pa::SignerCallbackHandler
+{
+public:
+    explicit FunctionSignerCallbackHandler(c2pa::SignerFunc* callback) :
+        caller_callback(callback)
+    {
+    }
+
+    std::vector<unsigned char> HandleCallback(const std::vector<unsigned char>& data) override {
+        return caller_callback(data);
+    }
+
+private:
+    c2pa::SignerFunc* caller_callback;
+};
+    
 intptr_t signer_passthrough_with_function(const void* context, const unsigned char* data, uintptr_t len, unsigned char* signature, uintptr_t sig_max_len)
 {
     auto* callback = reinterpret_cast<c2pa::SignerFunc*>(const_cast<void*>(context));
     auto callback_handler = std::make_unique<FunctionSignerCallbackHandler>(callback); 
 
-    return signer_passthrough_with_handler(callback_handler.get(), data, len, signature, sig_max_len);
+    return signer_passthrough(callback_handler.get(), data, len, signature, sig_max_len);
 }
 
 }
@@ -865,7 +864,7 @@ inline std::vector<unsigned char> to_byte_vector(const unsigned char* data, int6
 
     Signer::Signer(SignerCallbackHandler* callback_handler, C2paSigningAlg alg, const std::string& sign_cert, const std::string& tsa_uri)
     {
-        signer = c2pa_signer_create(callback_handler, &signer_passthrough_with_handler, alg, sign_cert.c_str(), validate_tsa_uri(tsa_uri));
+        signer = c2pa_signer_create(callback_handler, &signer_passthrough, alg, sign_cert.c_str(), validate_tsa_uri(tsa_uri));
     }
 
     Signer::Signer(const std::string &alg, const std::string &sign_cert, const std::string &private_key, const std::optional<std::string> &tsa_uri)
