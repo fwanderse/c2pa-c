@@ -706,28 +706,21 @@ namespace c2pa
     /// @return The signature as a vector of bytes.
     using SignerFunc = std::vector<unsigned char>(const std::vector<unsigned char> &);
 
-    /// @brief Signer callback function type.
-    /// @details This function type is used to create a callback function for signing.
-    ///          The callback receives data to sign and returns the signature.
-    /// @param data The data to sign.
-    /// @param callerContext a pointer holder caller's context, 
-    ///        which can be used to pass information from the caller to the callback.
-    /// @return The signature as a vector of bytes.
-    using SignerFuncWithContext = std::vector<unsigned char>(const void* callerContext, const std::vector<unsigned char>&);
+    /// @brief Abstract base class for signer callback handler.
+    /// @details Specialized implementations can implement a signer callback function 
+    ///          and act as a contextual callback.
+    ///          The callback handler is responsible for receiving data to sign and return the signature.
+    class SignerCallbackHandler 
+    {
+    public:
+        virtual ~SignerCallbackHandler() {}
 
-    /// @brief Abstract base class for signer callback wrappers.
-    /// @details Specialized implementations can wrap a signer callback function 
-    ///          and allow for different types of callbacks (with or without context).
-    ///          The callback receives data to sign and returns the signature.
-    struct SignerCallbackWrapper {
-        virtual ~SignerCallbackWrapper() {}
-
-        /// <summary>
-        /// Calls the wrappers callback function with the provided data and returns the signature. 
-        /// </summary>
+        
+        /// @brief Handles the callback by taking the provided data and returning the signature. 
+        /// @details Derived classes should implement this method to perform the signing operation.
         /// @param data The data to sign.
         /// @return The signature as a vector of bytes.
-        virtual std::vector<unsigned char> operator()(const std::vector<unsigned char>& data) const = 0;
+        virtual std::vector<unsigned char> HandleCallback(const std::vector<unsigned char>& data) = 0;
     };
 
     /// @brief Signer class for creating a Signer
@@ -737,7 +730,7 @@ namespace c2pa
     {
     private:
         C2paSigner *signer;
-        SignerCallbackWrapper* callback_wrapper = nullptr;
+        SignerCallbackHandler* owned_callback_handler = nullptr;
 
         /// @brief Validate a TSA URI string.
         /// @param tsa_uri The TSA URI to validate.
@@ -759,14 +752,12 @@ namespace c2pa
         Signer(SignerFunc* callback, C2paSigningAlg alg, const std::string& sign_cert, const std::string& tsa_uri);
 
         /// @brief Create a Signer from a callback function.
-        /// @param callback The callback function to use for signing.
-        /// @param callerContext a pointer holder caller's context, 
-        ///        which can be used to pass information from the caller to the callback.
+        /// @param callback_handler A callback handler implemented by the caller
         /// @param alg The signing algorithm to use (e.g., C2paSigningAlg::PS256).
         /// @param sign_cert The signing certificate in PEM format.
         /// @param tsa_uri The timestamp authority URI for time-stamping.
         /// @throws C2paException if signer creation fails.
-        Signer(SignerFuncWithContext *callback, const void* caller_context, C2paSigningAlg alg, const std::string &sign_cert, const std::string &tsa_uri);
+        Signer(SignerCallbackHandler *callback_handler, C2paSigningAlg alg, const std::string &sign_cert, const std::string &tsa_uri);
 
         /// @brief Create a signer from a Signer pointer and take ownership of that pointer.
         /// @param c_signer The C2paSigner pointer (must be non-null).
@@ -792,14 +783,14 @@ namespace c2pa
         /// @param other Signer to move from.
         Signer(Signer&& other) noexcept 
             : signer(std::exchange(other.signer, nullptr)),
-              callback_wrapper(std::exchange(other.callback_wrapper, nullptr)) {
+            owned_callback_handler(std::exchange(other.owned_callback_handler, nullptr)) {
         }
 
         Signer& operator=(Signer&& other) noexcept {
             if (this != &other) {
                 c2pa_free(signer);
                 signer = std::exchange(other.signer, nullptr);
-                callback_wrapper = std::exchange(other.callback_wrapper, nullptr);
+                owned_callback_handler = std::exchange(other.owned_callback_handler, nullptr);
             }
             return *this;
         }

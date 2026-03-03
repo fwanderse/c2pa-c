@@ -56,10 +56,10 @@ intptr_t signer_passthrough(const void *context, const unsigned char *data, uint
   }
   try
   {
-    const auto callback_wrapper = static_cast<c2pa::SignerCallbackWrapper*>(const_cast<void*>(context));
+    const auto callback_handler = static_cast<c2pa::SignerCallbackHandler*>(const_cast<void*>(context));
                 
     std::vector<uint8_t> data_vec(data, data + len);
-    std::vector<uint8_t> signature_vec = (*callback_wrapper)(data_vec);
+    std::vector<uint8_t> signature_vec = callback_handler->HandleCallback(data_vec);
     if (signature_vec.size() > sig_max_len)
     {
       return c2pa::stream_error_return(c2pa::StreamError::NoBufferSpace);
@@ -281,33 +281,22 @@ inline std::vector<unsigned char> to_byte_vector(const unsigned char* data, int6
     return result;
 }
 
-/// @brief Wrapper for signer callback with a simple function pointer (no caller context).
-struct SignerCallbackWrapperWithoutContext : SignerCallbackWrapper {
-    SignerFunc* caller_callback;
-
-    explicit SignerCallbackWrapperWithoutContext(SignerFunc* callback) :
+/// @brief Callback handler that adapts a simple function pointer to the SignerCallbackHandler interface.
+///        Used internally.
+class SimpleSignerCallbackHandler : public SignerCallbackHandler 
+{
+public:
+    explicit SimpleSignerCallbackHandler(SignerFunc* callback) :
         caller_callback(callback)
     {
     }
 
-    std::vector<unsigned char> operator()(const std::vector<unsigned char>& data) const override {
+    std::vector<unsigned char> HandleCallback(const std::vector<unsigned char>& data) override {
         return caller_callback(data);
     }
-};
 
-/// @brief Wrapper for signer callback with a function pointer and caller context. 
-struct SignerCallbackWrapperWithContext : SignerCallbackWrapper {
-    SignerFuncWithContext* callback;
-    const void* caller_context;
-
-    explicit SignerCallbackWrapperWithContext(SignerFuncWithContext* callback, const void* caller_context) :
-        callback(callback), caller_context(caller_context)
-    {
-    }
-
-    std::vector<unsigned char> operator()(const std::vector<unsigned char>& data) const override {
-        return callback(caller_context, data);
-    }
+private:
+    SignerFunc* caller_callback;
 };
 
 } // namespace detail
@@ -862,18 +851,15 @@ struct SignerCallbackWrapperWithContext : SignerCallbackWrapper {
 
     Signer::Signer(SignerFunc *callback, C2paSigningAlg alg, const std::string &sign_cert, const std::string &tsa_uri)
     {
-        // Wrap and pass the C++ callback as the context to the signer created. 
-        callback_wrapper = new detail::SignerCallbackWrapperWithoutContext{ callback };
+        // Create a callback handler that will call the simple SignerFunc. Keep reference for lifetime management.
+        owned_callback_handler = new detail::SimpleSignerCallbackHandler(callback);
 
-        signer = c2pa_signer_create(callback_wrapper, &signer_passthrough, alg, sign_cert.c_str(), validate_tsa_uri(tsa_uri));
+        signer = c2pa_signer_create(owned_callback_handler, &signer_passthrough, alg, sign_cert.c_str(), validate_tsa_uri(tsa_uri));
     }
 
-    Signer::Signer(SignerFuncWithContext* callback, const void* caller_context, C2paSigningAlg alg, const std::string& sign_cert, const std::string& tsa_uri)
+    Signer::Signer(SignerCallbackHandler* callback_handler, C2paSigningAlg alg, const std::string& sign_cert, const std::string& tsa_uri)
     {
-        // Wrap and pass the C++ callback and caller's context as the context to the signer created.
-        callback_wrapper = new detail::SignerCallbackWrapperWithContext{ callback, caller_context };
-
-        signer = c2pa_signer_create(callback_wrapper, &signer_passthrough, alg, sign_cert.c_str(), validate_tsa_uri(tsa_uri));
+        signer = c2pa_signer_create(callback_handler, &signer_passthrough, alg, sign_cert.c_str(), validate_tsa_uri(tsa_uri));
     }
 
     Signer::Signer(const std::string &alg, const std::string &sign_cert, const std::string &private_key, const std::optional<std::string> &tsa_uri)
@@ -885,7 +871,7 @@ struct SignerCallbackWrapperWithContext : SignerCallbackWrapper {
     Signer::~Signer()
     {
         c2pa_free(signer);
-        delete callback_wrapper;
+        delete owned_callback_handler;
     }
 
     /// @brief  Get the C2paSigner
