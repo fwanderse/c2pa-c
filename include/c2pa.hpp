@@ -730,7 +730,6 @@ namespace c2pa
     {
     private:
         C2paSigner *signer;
-        SignerCallbackHandler* owned_callback_handler = nullptr;
 
         /// @brief Validate a TSA URI string.
         /// @param tsa_uri The TSA URI to validate.
@@ -781,16 +780,13 @@ namespace c2pa
 
         /// @brief Move constructor.
         /// @param other Signer to move from.
-        Signer(Signer&& other) noexcept 
-            : signer(std::exchange(other.signer, nullptr)),
-            owned_callback_handler(std::exchange(other.owned_callback_handler, nullptr)) {
+        Signer(Signer&& other) noexcept : signer(std::exchange(other.signer, nullptr)) {
         }
 
         Signer& operator=(Signer&& other) noexcept {
             if (this != &other) {
                 c2pa_free(signer);
                 signer = std::exchange(other.signer, nullptr);
-                owned_callback_handler = std::exchange(other.owned_callback_handler, nullptr);
             }
             return *this;
         }

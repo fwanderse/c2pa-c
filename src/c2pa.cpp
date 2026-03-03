@@ -48,37 +48,63 @@ std::vector<std::string> c_mime_types_to_vector(const char* const* mime_types, u
   return result;
 }
 
-intptr_t signer_passthrough(const void *context, const unsigned char *data, uintptr_t len, unsigned char *signature, uintptr_t sig_max_len)
+/// @brief Callback handler that adapts a simple function pointer to the SignerCallbackHandler interface.
+///        Used internally.
+class FunctionSignerCallbackHandler : public c2pa::SignerCallbackHandler
 {
-  if (data == nullptr || signature == nullptr)
-  {
-    return c2pa::stream_error_return(c2pa::StreamError::InvalidArgument);
-  }
-  try
-  {
-    const auto callback_handler = static_cast<c2pa::SignerCallbackHandler*>(const_cast<void*>(context));
-                
-    std::vector<uint8_t> data_vec(data, data + len);
-    std::vector<uint8_t> signature_vec = callback_handler->HandleCallback(data_vec);
-    if (signature_vec.size() > sig_max_len)
+public:
+    explicit FunctionSignerCallbackHandler(c2pa::SignerFunc* callback) :
+        caller_callback(callback)
     {
-      return c2pa::stream_error_return(c2pa::StreamError::NoBufferSpace);
     }
-    std::copy(signature_vec.begin(), signature_vec.end(), signature);
-    return signature_vec.size();
-  }
-  catch (std::exception const &e)
-  {
-    // todo pass exceptions to Rust error handling
-    (void)e;
-    // printf("Error: signer_passthrough - %s\n", e.what());
-    return static_cast<intptr_t>(c2pa::OperationResult::Error);
-  }
-  catch (...)
-  {
-    // printf("Error: signer_passthrough - unknown C2paException\n");
-    return static_cast<intptr_t>(c2pa::OperationResult::Error);
-  }
+
+    std::vector<unsigned char> HandleCallback(const std::vector<unsigned char>& data) override {
+        return caller_callback(data);
+    }
+
+private:
+    c2pa::SignerFunc* caller_callback;
+};
+    
+intptr_t signer_passthrough_with_handler(const void* context, const unsigned char* data, uintptr_t len, unsigned char* signature, uintptr_t sig_max_len)
+{
+    if (data == nullptr || signature == nullptr)
+    {
+        return c2pa::stream_error_return(c2pa::StreamError::InvalidArgument);
+    }
+    try
+    {
+        const auto callback_handler = static_cast<c2pa::SignerCallbackHandler*>(const_cast<void*>(context));
+
+        std::vector<uint8_t> data_vec(data, data + len);
+        std::vector<uint8_t> signature_vec = callback_handler->HandleCallback(data_vec);
+        if (signature_vec.size() > sig_max_len)
+        {
+            return c2pa::stream_error_return(c2pa::StreamError::NoBufferSpace);
+        }
+        std::copy(signature_vec.begin(), signature_vec.end(), signature);
+        return signature_vec.size();
+    }
+    catch (std::exception const& e)
+    {
+        // todo pass exceptions to Rust error handling
+        (void)e;
+        // printf("Error: signer_passthrough - %s\n", e.what());
+        return static_cast<intptr_t>(c2pa::OperationResult::Error);
+    }
+    catch (...)
+    {
+        // printf("Error: signer_passthrough - unknown C2paException\n");
+        return static_cast<intptr_t>(c2pa::OperationResult::Error);
+    }
+}
+
+intptr_t signer_passthrough_with_function(const void* context, const unsigned char* data, uintptr_t len, unsigned char* signature, uintptr_t sig_max_len)
+{
+    auto* callback = reinterpret_cast<c2pa::SignerFunc*>(const_cast<void*>(context));
+    auto callback_handler = std::make_unique<FunctionSignerCallbackHandler>(callback); 
+
+    return signer_passthrough_with_handler(callback_handler.get(), data, len, signature, sig_max_len);
 }
 
 }
@@ -281,23 +307,6 @@ inline std::vector<unsigned char> to_byte_vector(const unsigned char* data, int6
     return result;
 }
 
-/// @brief Callback handler that adapts a simple function pointer to the SignerCallbackHandler interface.
-///        Used internally.
-class SimpleSignerCallbackHandler : public SignerCallbackHandler 
-{
-public:
-    explicit SimpleSignerCallbackHandler(SignerFunc* callback) :
-        caller_callback(callback)
-    {
-    }
-
-    std::vector<unsigned char> HandleCallback(const std::vector<unsigned char>& data) override {
-        return caller_callback(data);
-    }
-
-private:
-    SignerFunc* caller_callback;
-};
 
 } // namespace detail
 
@@ -851,15 +860,12 @@ private:
 
     Signer::Signer(SignerFunc *callback, C2paSigningAlg alg, const std::string &sign_cert, const std::string &tsa_uri)
     {
-        // Create a callback handler that will call the simple SignerFunc. Keep reference for lifetime management.
-        owned_callback_handler = new detail::SimpleSignerCallbackHandler(callback);
-
-        signer = c2pa_signer_create(owned_callback_handler, &signer_passthrough, alg, sign_cert.c_str(), validate_tsa_uri(tsa_uri));
+        signer = c2pa_signer_create((const void*)callback, &signer_passthrough_with_function, alg, sign_cert.c_str(), validate_tsa_uri(tsa_uri));
     }
 
     Signer::Signer(SignerCallbackHandler* callback_handler, C2paSigningAlg alg, const std::string& sign_cert, const std::string& tsa_uri)
     {
-        signer = c2pa_signer_create(callback_handler, &signer_passthrough, alg, sign_cert.c_str(), validate_tsa_uri(tsa_uri));
+        signer = c2pa_signer_create(callback_handler, &signer_passthrough_with_handler, alg, sign_cert.c_str(), validate_tsa_uri(tsa_uri));
     }
 
     Signer::Signer(const std::string &alg, const std::string &sign_cert, const std::string &private_key, const std::optional<std::string> &tsa_uri)
@@ -871,7 +877,6 @@ private:
     Signer::~Signer()
     {
         c2pa_free(signer);
-        delete owned_callback_handler;
     }
 
     /// @brief  Get the C2paSigner
