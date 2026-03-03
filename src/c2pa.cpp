@@ -48,7 +48,7 @@ std::vector<std::string> c_mime_types_to_vector(const char* const* mime_types, u
   return result;
 }
 
-intptr_t signer_passthrough(const void* context, const unsigned char* data, uintptr_t len, unsigned char* signature, uintptr_t sig_max_len)
+intptr_t signer_passthrough(const void *context, const unsigned char *data, uintptr_t len, unsigned char *signature, uintptr_t sig_max_len)
 {
   if (data == nullptr || signature == nullptr)
   {
@@ -67,7 +67,7 @@ intptr_t signer_passthrough(const void* context, const unsigned char* data, uint
     std::copy(signature_vec.begin(), signature_vec.end(), signature);
     return signature_vec.size();
   }
-  catch (std::exception const& e)
+  catch (std::exception const &e)
   {
     // todo pass exceptions to Rust error handling
     (void)e;
@@ -858,7 +858,7 @@ inline std::vector<unsigned char> to_byte_vector(const unsigned char* data, int6
 
     Signer::Signer(SignerFunc *callback, C2paSigningAlg alg, const std::string &sign_cert, const std::string &tsa_uri)
     {
-        signer = c2pa_signer_create((const void*)callback, &signer_passthrough_with_function, alg, sign_cert.c_str(), validate_tsa_uri(tsa_uri));
+        signer = c2pa_signer_create((const void *)callback, &signer_passthrough_with_function, alg, sign_cert.c_str(), validate_tsa_uri(tsa_uri));
     }
 
     Signer::Signer(SignerCallbackHandler* callback_handler, C2paSigningAlg alg, const std::string& sign_cert, const std::string& tsa_uri)
