@@ -101,9 +101,9 @@ private:
 intptr_t signer_passthrough_with_function(const void* context, const unsigned char* data, uintptr_t len, unsigned char* signature, uintptr_t sig_max_len)
 {
     auto* callback = reinterpret_cast<c2pa::SignerFunc*>(const_cast<void*>(context));
-    auto callback_handler = std::make_unique<FunctionSignerCallbackHandler>(callback); 
+    const FunctionSignerCallbackHandler callback_handler(callback);
 
-    return signer_passthrough(callback_handler.get(), data, len, signature, sig_max_len);
+    return signer_passthrough(&callback_handler, data, len, signature, sig_max_len);
 }
 
 }
