@@ -726,6 +726,23 @@ namespace c2pa
     /// @return The signature as a vector of bytes.
     using SignerFunc = std::vector<unsigned char>(const std::vector<unsigned char> &);
 
+    /// @brief Abstract base class for signer callback handler.
+    /// @details Specialized implementations can implement a signer callback function 
+    ///          and act as a contextual callback.
+    ///          The callback handler is responsible for receiving data to sign and return the signature.
+    class SignerCallbackHandler 
+    {
+    public:
+        virtual ~SignerCallbackHandler() {}
+
+        
+        /// @brief Handles the callback by taking the provided data and returning the signature. 
+        /// @details Derived classes should implement this method to perform the signing operation.
+        /// @param data The data to sign.
+        /// @return The signature as a vector of bytes.
+        virtual std::vector<unsigned char> HandleCallback(const std::vector<unsigned char>& data) = 0;
+    };
+
     /// @brief Signer class for creating a Signer
     /// @details This class is used to create a signer from a signing algorithm, certificate, and TSA URI.
     ///          Supports both callback-based and direct signing methods.
@@ -766,7 +783,15 @@ namespace c2pa
         /// @param sign_cert The signing certificate in PEM format.
         /// @param tsa_uri The timestamp authority URI for time-stamping.
         /// @throws C2paException if signer creation fails.
-        Signer(SignerFunc *callback, C2paSigningAlg alg, const std::string &sign_cert, const std::string &tsa_uri);
+        Signer(SignerFunc* callback, C2paSigningAlg alg, const std::string& sign_cert, const std::string& tsa_uri);
+
+        /// @brief Create a Signer from a callback function.
+        /// @param callback_handler A callback handler implemented by the caller
+        /// @param alg The signing algorithm to use (e.g., C2paSigningAlg::PS256).
+        /// @param sign_cert The signing certificate in PEM format.
+        /// @param tsa_uri The timestamp authority URI for time-stamping.
+        /// @throws C2paException if signer creation fails.
+        Signer(SignerCallbackHandler *callback_handler, C2paSigningAlg alg, const std::string &sign_cert, const std::string &tsa_uri);
 
         /// @brief Create a signer from a Signer pointer and take ownership of that pointer.
         /// @param c_signer The C2paSigner pointer (must be non-null).
