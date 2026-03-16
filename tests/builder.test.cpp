@@ -5692,6 +5692,62 @@ TEST_F(BuilderTest, SignStreamWithCallbackSignerInContext) {
     ASSERT_NO_THROW(reader.json());
 }
 
+// Sign a stream using a CallbackSigner with a SignerCallbackHandler descendant stored in Context
+TEST_F(BuilderTest, SignStreamWithCallbackSignerWithHandlerInContext) {
+    
+    class TestHandler : public c2pa::SignerCallbackHandler {
+        std::string private_key;
+    public:
+        explicit TestHandler(std::string private_key) : private_key(std::move(private_key)) {}
+
+        std::vector<unsigned char> HandleCallback(const std::vector<unsigned char>& data) override
+        {
+            const unsigned char* sig_ptr = c2pa_ed25519_sign(
+                data.data(), data.size(), private_key.c_str());
+            if (!sig_ptr) {
+                throw std::runtime_error("c2pa_ed25519_sign failed");
+            }
+            std::vector<unsigned char> signature(sig_ptr, sig_ptr + 64);
+            c2pa_signature_free(sig_ptr);
+            return signature;
+        }
+    };
+
+    auto image_path = c2pa_test::get_fixture_path("A.jpg");
+    auto manifest = c2pa_test::read_text_file(c2pa_test::get_fixture_path("training.json"));
+    auto private_key = c2pa_test::read_text_file(c2pa_test::get_fixture_path("ed25519.pem"));
+    auto certs = c2pa_test::read_text_file(c2pa_test::get_fixture_path("ed25519.pub"));
+
+    TestHandler callbackHandler(private_key);
+
+    auto signer = c2pa::Signer(
+        &callbackHandler, C2paSigningAlg::Ed25519, certs,
+        "http://timestamp.digicert.com");
+
+    auto context = c2pa::Context::ContextBuilder()
+        .with_signer(std::move(signer))
+        .create_context();
+
+    auto builder = c2pa::Builder(context, manifest);
+
+    std::ifstream source(image_path, std::ios::binary);
+    ASSERT_TRUE(source.is_open());
+
+    std::stringstream memory_buffer(std::ios::in | std::ios::out | std::ios::binary);
+    std::iostream& dest = memory_buffer;
+
+    std::vector<unsigned char> manifest_data;
+    ASSERT_NO_THROW(manifest_data = builder.sign("image/jpeg", source, dest));
+    source.close();
+    ASSERT_FALSE(manifest_data.empty());
+
+    dest.flush();
+    dest.seekg(0, std::ios::beg);
+
+    auto reader = c2pa::Reader(context, "image/jpeg", dest);
+    ASSERT_NO_THROW(reader.json());
+}
+
 
 TEST_F(BuilderTest, CreateIntentAddsCreatedAction)
 {

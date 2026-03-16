@@ -28,11 +28,12 @@ intptr_t signer_passthrough(const void *context, const unsigned char *data, uint
   }
   try
   {
-    // the context is a pointer to the C++ callback function
-    auto* callback = reinterpret_cast<c2pa::SignerFunc*>(const_cast<void*>(context));
-    std::vector<uint8_t> data_vec(data, data + len);
-    std::vector<uint8_t> signature_vec = (callback)(data_vec);
-    if (signature_vec.size() > sig_max_len)
+      // Cast the context back to our C++ callback handler interface which implements the HandleCallback function.
+      const auto callback_handler = static_cast<c2pa::SignerCallbackHandler*>(const_cast<void*>(context));
+
+      std::vector<uint8_t> data_vec(data, data + len);
+      std::vector<uint8_t> signature_vec = callback_handler->HandleCallback(data_vec);
+      if (signature_vec.size() > sig_max_len)
     {
       return c2pa::stream_error_return(c2pa::StreamError::NoBufferSpace);
     }
@@ -53,6 +54,31 @@ intptr_t signer_passthrough(const void *context, const unsigned char *data, uint
   }
 }
 
+/// @brief Internal callback handler that adapts a simple function pointer to the SignerCallbackHandler interface. 
+class FunctionSignerCallbackHandler : public c2pa::SignerCallbackHandler
+{
+public:
+    explicit FunctionSignerCallbackHandler(c2pa::SignerFunc* callback) :
+        caller_callback(callback)
+    {
+    }
+
+    std::vector<unsigned char> HandleCallback(const std::vector<unsigned char>& data) override {
+        return caller_callback(data);
+    }
+
+private:
+    c2pa::SignerFunc* caller_callback;
+};
+
+intptr_t signer_passthrough_with_function(const void* context, const unsigned char* data, uintptr_t len, unsigned char* signature, uintptr_t sig_max_len)
+{
+    auto* callback = reinterpret_cast<c2pa::SignerFunc*>(const_cast<void*>(context));
+    const FunctionSignerCallbackHandler callback_handler(callback);
+
+    return signer_passthrough(&callback_handler, data, len, signature, sig_max_len);
+}
+
 } // anonymous namespace
 
 namespace c2pa
@@ -70,7 +96,13 @@ namespace c2pa
     Signer::Signer(SignerFunc *callback, C2paSigningAlg alg, const std::string &sign_cert, const std::string &tsa_uri)
     {
         // Pass the C++ callback as a context to our static callback wrapper.
-        signer = c2pa_signer_create((const void *)callback, &signer_passthrough, alg, sign_cert.c_str(), validate_tsa_uri(tsa_uri));
+        signer = c2pa_signer_create((const void *)callback, &signer_passthrough_with_function, alg, sign_cert.c_str(), validate_tsa_uri(tsa_uri));
+    }
+
+    Signer::Signer(SignerCallbackHandler* callback_handler, C2paSigningAlg alg, const std::string& sign_cert, const std::string& tsa_uri)
+    {
+        // Pass the C++ callback handler interface as a context to our static callback wrapper.
+        signer = c2pa_signer_create(callback_handler, &signer_passthrough, alg, sign_cert.c_str(), validate_tsa_uri(tsa_uri));
     }
 
     Signer::Signer(const std::string &alg, const std::string &sign_cert, const std::string &private_key, const std::optional<std::string> &tsa_uri)
