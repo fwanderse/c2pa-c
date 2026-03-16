@@ -785,7 +785,7 @@ namespace c2pa
         /// @throws C2paException if signer creation fails.
         Signer(SignerFunc* callback, C2paSigningAlg alg, const std::string& sign_cert, const std::string& tsa_uri);
 
-        /// @brief Create a Signer from a callback function.
+        /// @brief Create a Signer from a callback handler.
         /// @param callback_handler A callback handler implemented by the caller
         /// @param alg The signing algorithm to use (e.g., C2paSigningAlg::PS256).
         /// @param sign_cert The signing certificate in PEM format.
